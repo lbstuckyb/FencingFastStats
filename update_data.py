@@ -98,7 +98,7 @@ comp['TMVAVG'] = comp[['TMVAVG','Q']].apply(lambda x: np.nan if x['Q']==0 else x
 
 
 # import old data
-df = pd.read_csv('./results_23mar2021.csv')
+df = pd.read_csv('./results20apr2022.csv')
 
 
 # concat new and old
@@ -109,5 +109,5 @@ final_df.drop(columns=[col for col in final_df.columns if 'Unn' in col], inplace
 print(df.columns)
 print(final_df.columns)
 
-final_df.to_csv('./results20apr2022.csv')
+final_df.to_csv('./results21apr2022.csv')
 final_df.to_csv('./updated_results.csv')
