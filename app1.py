@@ -1,13 +1,13 @@
 import dash
-import dash_core_components as dcc
-import dash_html_components as html
+from dash import dcc
+from dash import html
 import plotly.graph_objs as go
 import pandas as pd
 import numpy as np
 from dash.dependencies import Input, Output, State
 import datetime as dt
 import dash_auth
-import dash_table
+from dash import dash_table
 import requests
 from io import StringIO
 
@@ -33,9 +33,16 @@ orig_url2='https://drive.google.com/file/d/1gNy87exbLaWkIVT_gBCzS0j3-Ogimuq0/vie
 #csv_raw2 = StringIO(url2)
 csv_raw2 = 'https://raw.githubusercontent.com/lbstuckyb/FencingFastStats/master/results20apr2022.csv'
 df = pd.read_csv(csv_raw2)
+print(df['date'][0].split(' ')[0])
+df.dropna(subset = ["date"], inplace=True)
 #df.drop(columns=['Unnamed: 0'],inplace=True)
-df['date'] = df['date'].apply(lambda x:dt.datetime.strptime(x,'%Y-%m-%d'))
+df['date'] = df['date'].astype(str)
+df['date'] = df['date'].apply(lambda x: x.split(' ')[0])
+print(df['date'])
 
+df['date'] = df['date'].apply(lambda x:dt.datetime.strptime(x, '%Y-%m-%d'))
+print(df['date'])
+print('hjola')
 
 features = [{'label':'Posición final','value':'POS'},
             {'label':'Ingreso a cuadro de 96','value':'T96+'},

@@ -707,6 +707,12 @@ def get_competition(info=None,
     comp = pd.merge(left=comp,right=h2,on='id',how='outer')
     comp = pd.merge(left=comp,right=h1,on='id',how='outer')
 
+
+
+
+
+
+
     return comp
 
 
