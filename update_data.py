@@ -104,7 +104,7 @@ print(comp.tail())
 df = pd.read_csv('./results_23mar2021.csv')
 
 
-# concat new and old
+# concat new and oldd
 
 final_df = pd.concat(objs=[df, comp], ignore_index=True, sort=False)
 final_df.drop(columns=[col for col in final_df.columns if 'Unn' in col], inplace=True)
