@@ -94,11 +94,14 @@ comp['PM1&2V%']=comp['p1_result']*comp['p2_result']
 comp['TMVAVG'] = comp['match_res_pre256']+comp['match_res_pre128']+comp['match_res_pre64']+comp['match_res_t64']+comp['match_res_t32']+comp['match_res_t16']+comp['match_res_t8']+comp['match_res_semi']+comp['match_res_final']
 comp['TMVAVG'] = comp[['TMVAVG','Q']].apply(lambda x: np.nan if x['Q']==0 else x['TMVAVG'], axis=1)
 
+comp['T64+'] = comp['opp_t64'].apply(lambda x: 0 if pd.isnull(x) else 1)
+comp['T96+'] = comp['opp_pre64'].apply(lambda x: 0 if pd.isnull(x) else 1)
 
+print(comp.tail())
 
 
 # import old data
-df = pd.read_csv('./results20apr2022.csv')
+df = pd.read_csv('./results_23mar2021.csv')
 
 
 # concat new and old
