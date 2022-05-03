@@ -24,14 +24,8 @@ url1 = requests.get(dwn_url1).text
 csv_raw1 = StringIO(url1)
 rank = pd.read_csv(csv_raw1)
 
-orig_url2='https://drive.google.com/file/d/1gNy87exbLaWkIVT_gBCzS0j3-Ogimuq0/view?usp=sharing'
-# https://drive.google.com/file/d/1NRJYMnWfG8cU3anv41Ymi8jWJSYooW_U/view?usp=sharing -> data de 2021, no sirve la tabla
-
-#file_id2 = orig_url2.split('/')[-2]
-#dwn_url2='https://drive.google.com/uc?export=download&id=' + file_id2
-#url2 = requests.get(dwn_url2).text
-#csv_raw2 = StringIO(url2)
-csv_raw2 = 'https://raw.githubusercontent.com/lbstuckyb/FencingFastStats/master/updated_results.csv'
+# international Data
+csv_raw2 = 'https://raw.githubusercontent.com/lbstuckyb/FencingFastStats/master/data/updated_results.csv'
 df = pd.read_csv(csv_raw2)
 
 df.dropna(subset = ["date"], inplace=True)
@@ -41,6 +35,14 @@ df['date'] = df['date'].apply(lambda x: x.split(' ')[0])
 
 df['date'] = df['date'].apply(lambda x:dt.datetime.strptime(x, '%Y-%m-%d'))
 
+# Colombian Data
+csv_raw3 = 'https://raw.githubusercontent.com/lbstuckyb/FencingFastStats/master/data/efj.csv'
+col_df = pd.read_csv(csv_raw3)
+col_df.drop(columns=['Unnamed: 0'],inplace=True)
+col_df['date'] = col_df['date'].astype(str)
+col_df['date'] = col_df['date'].apply(lambda x: x.split(' ')[0])
+col_df['date'] = col_df['date'].apply(lambda x:dt.datetime.strptime(x, '%d-%m-%Y'))
+print(col_df.columns)
 
 features = [{'label':'Posición final','value':'POS'},
             {'label':'Ingreso a cuadro de 96','value':'T96+'},
@@ -67,9 +69,10 @@ app.layout = html.Div([
     html.H2('Seguimiento Estadístico',style={'font-size':30,'text-align': 'center'}),
     html.Div([
         dcc.Tabs(id="tabs", value='tab-1', children=[
-            dcc.Tab(label='Ranking y Resultados Individuales', value='tab-1'),
-            dcc.Tab(label='Análisis de Variables', value='tab-2'),
-            dcc.Tab(label='Información', value='tab-3')
+            dcc.Tab(label='Internacional', value='tab-1'),
+            dcc.Tab(label='Colombia', value='tab-2'),
+            dcc.Tab(label='Análisis de Variables', value='tab-3'),
+            dcc.Tab(label='Información', value='tab-4')
 
         ]),
     html.Div(id='tabs-content')
@@ -253,6 +256,72 @@ def render_content(tab):
 
     elif tab == 'tab-2':
         return html.Div([
+            html.H3('Rendimiento Individual Nacional'),
+            html.Div([
+                html.Div([
+                    dcc.Dropdown(id='nal-res-esg-picker',
+                                               options=[{'label':i,'value':i}for i in col_df['name'].unique()],
+                                               multi=True,
+                                               style={'width':'100%'},
+                                               value=[]),
+                    html.Div(id='tabla-individual-nacional'),
+                    html.Div([
+                        html.Div([html.Div([
+                        html.Div([html.H4('Variables de Comparación',style={'justify-content':'center',
+                                                                                   'display':'flex'}),
+                                  dcc.Dropdown(id='yaxis-nal-res',
+                                                   options=features,
+                                                   value='POS')
+                                 ],style={'width':'40%'}),
+                        html.Div([html.Div([
+                                      html.H4('Periodos de tiempo',style={'justify-content':'center',
+                                                                                   'display':'flex'}),
+                                      html.Div([dcc.DatePickerRange(id='nal-custom-date-range',
+                                                                    month_format='MMMM Y',
+                                                                    end_date_placeholder_text='MMMM Y',
+                                                                    start_date_placeholder_text='MMMM Y',
+                                                                    min_date_allowed=df['date'].min(),
+                                                                    clearable=True,)
+
+                                      ],style={'justify-content':'center','display':'flex',
+                                                        'vertical-align': 'middle','width':'100%',
+                                                       'font-size':13}),
+                                      html.Div([dcc.RadioItems(id='nal-timeframes',
+                                                               options=[
+                                                               {'label': 'Todo', 'value': pd.Timestamp(dt.date.today()- dt.timedelta(days=12*365))},
+                                                               {'label': '2 Años', 'value': pd.Timestamp(dt.date.today()- dt.timedelta(days=2*365))},
+                                                               {'label': '1 Año', 'value': pd.Timestamp(dt.date.today()- dt.timedelta(days=365))},
+                                                               {'label': '6 Meses', 'value': pd.Timestamp(dt.date.today()- dt.timedelta(days=(6*365)/12))},
+                                                               {'label': '3 Meses', 'value': pd.Timestamp(dt.date.today()- dt.timedelta(days=(3*365)/12))}],
+                                                               value=pd.Timestamp(dt.date.today()- dt.timedelta(days=12*365)),
+                                                               labelStyle={'display': 'inline-block','padding':'20px'},
+                                                               style={}),
+                                               ],style={'justify-content':'center','display':'flex',
+                                                        'vertical-align': 'middle','width':'100%',
+                                                       'font-size':13}),
+                                     html.H4('Categoria',style={'justify-content':'center',
+                                                                                   'display':'flex'}),
+                                     html.Div([dcc.Checklist(id='nal-category',
+                                                              options=[{'label':'Mayores','value':'M'},
+                                                                       {'label':'Juvenil','value':'J'},
+                                                                       {'label':'Cadete','value':'C'},
+                                                                       {'label':'M15','value':'P'}],
+                                                              value=['J'],
+                                                            labelStyle = {'margin-left':'25px'})
+
+                                      ],style={'justify-content':'center','display':'flex',
+                                                        'vertical-align': 'middle','width':'100%',
+                                                       'font-size':13})
+                                  ],style={})
+                        ],style={'width':'60%'})
+                        ],style={'display':'flex', 'vertical-align': 'middle'})
+                                 ]),
+                        html.Div([dcc.Graph(id='nal-res-graph')])
+            ])])]),
+        ])
+
+    elif tab == 'tab-3':
+        return html.Div([
             html.Div([dash_table.DataTable(columns=[{"name": i, "id": i} for i in df.groupby(['name','country','weapon','gender'],as_index=False).agg({'age':'max',
                                                             'comp':'count',
                                                             'POS':'mean',
@@ -324,8 +393,7 @@ def render_content(tab):
 
         ])
 
-
-    elif tab == 'tab-3':
+    elif tab == 'tab-4':
         return html.Div([
             html.H3('Explicación de Variables'),
             dcc.Markdown('''
@@ -681,6 +749,107 @@ def update_graph(esg,yaxis_indres,comp,time_frame):
 #)
 #def update_output_div(input_value):
 #    return 'Mano: {}'.format(rank[rank['name']==input_value[0]]['hand'].unique()[0])
+
+
+
+# RESULTADOS COLOMBIA
+
+
+
+@app.callback(Output('tabla-individual-nacional','children'),
+              [Input('nal-res-esg-picker','value'),
+               Input('nal-category','value'),
+               Input('nal-custom-date-range', 'start_date'),
+               Input('nal-custom-date-range', 'end_date'),
+               Input('nal-timeframes','value')])
+def update_table_ind_nal(esg,cat,start_date,end_date,time_frame):#
+
+
+    df1 = col_df[col_df['date']>time_frame]
+    df2 = df1[df1['category'].isin(cat)].copy()
+    dff = df2[df2['name'].isin(esg)].groupby(['id','name','liga','weapon','gender'],as_index=False).agg({'age':'max',
+                                                            'comp':'count',
+                                                            'POS':'mean',
+                                                            # 'Q':'mean',
+                                                            'PIND':'mean',
+                                                            'PVICT':'mean',
+                                                            'PTR':'mean',
+                                                            'PTD':'mean',
+                                                            'PT-DIFF':'mean',
+                                                            'PMTR':'mean',
+                                                            'PMTD':'mean',
+                                                            'PMT-DIFF':'mean',
+                                                            'TTR':'mean',
+                                                            'TTD':'mean',
+                                                            'TMT-DIFF':'mean',
+                                                            # 'TMVAVG':'mean',
+                                                            # 'PEXMPT':'mean',
+                                                            'PM1V%':'mean',
+                                                            'PM1&2V%':'mean'}).round(3)
+    dff.sort_values(by='POS', ascending=True, inplace=True)
+
+    return dash_table.DataTable(id='table-ind-nal',
+                                columns=[{"name": i, "id": i} for i in dff.columns],
+                                data=dff.to_dict('records'),
+                                sort_action="native",
+                                hidden_columns=[],
+                                sort_mode='multi',
+                                page_size= 10,
+                                style_table={'overflowX': 'scroll',
+                                                'width': '100%',
+                                                'minWidth': '100%'},
+                                fixed_columns={'headers': True, 'data': 1})
+
+@app.callback(Output('nal-res-graph','figure'),
+              [Input('nal-res-esg-picker','value'),
+               Input('yaxis-nal-res','value'),
+               Input('nal-category','value'),
+               Input('nal-timeframes','value')])
+def update_nal_graph(esg,yaxis_indres,comp,time_frame):
+
+    df1 = col_df[col_df['date']>time_frame]
+    df1.sort_values(by='date',inplace=True)
+    df1 = df1[df1['category'].isin(comp)]
+
+    traces = []
+    df2 = df1[df1['name'].isin(esg)]
+
+    for e in esg:
+        if df2[df2['name']==e]['weapon'].nunique()==1:
+            df3 = df2[df2['name']==e]
+            traces.append(go.Scatter(x=df3['date'],
+                                     y=df3[yaxis_indres],
+                                     mode='markers+lines+text',
+                                     text=df3[yaxis_indres],
+                                     textposition='top center',
+                                     connectgaps=True,
+                                     name=e+' - '+(df3[df3['name']==e]['weapon'].unique()[0])))
+        elif df2[df2['name']==e]['weapon'].nunique()>1:
+             for wea in df2[df2['name']==e]['weapon'].unique():
+                    df3 = df2[(df2['name']==e)&(df2['weapon']==wea)]
+                    traces.append(go.Scatter(x=df3['date'],
+                                             y=df3[yaxis_indres],
+                                             mode = 'markers+lines+text',
+                                             text=df3[yaxis_indres],
+                                             textposition='top center',
+                                             connectgaps=True,
+                                             name = e+' - '+wea))
+    if yaxis_indres == 'POS' or yaxis_indres== 'PTR' or yaxis_indres == 'PMTR' or yaxis_indres=='TTR':
+        return dict(data=traces,layout=go.Layout(title='{}'.format(yaxis_indres),
+                                             legend_orientation="h",
+                                             #xaxis=dict(title='date'),
+                                             yaxis=dict(title='{}'.format(yaxis_indres),
+                                                        autorange="reversed",
+                                                        tickvals=[64, 32, 16, 8,3])))
+    else:
+        return dict(data=traces,layout=go.Layout(title='{}'.format(yaxis_indres),
+                                             legend_orientation="h",
+                                             #xaxis=dict(title='date'),
+                                             yaxis=dict(title='{}'.format(yaxis_indres))))
+
+
+
+
 
 
 
