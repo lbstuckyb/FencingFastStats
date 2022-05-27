@@ -2,13 +2,13 @@ import pandas as pd
 
 from main import get_competition
 
-h1 = pd.read_excel('./comp_results/tauber29abr2022.xlsx', sheet_name='Hoja1', skiprows=1, header=1)  # poules
-h2 = pd.read_excel('./comp_results/tauber29abr2022.xlsx', sheet_name='Hoja2')  # resultados de la poule
-h3 = pd.read_excel('./comp_results/tauber29abr2022.xlsx', sheet_name='Hoja3')  # tablas preliminares
-h4 = pd.read_excel('./comp_results/tauber29abr2022.xlsx', sheet_name='Hoja4')  # tablas 256 a 16
-h5 = pd.read_excel('./comp_results/tauber29abr2022.xlsx', sheet_name='Hoja5')  # tablas T8 a final
-h6 = pd.read_excel('./comp_results/tauber29abr2022.xlsx', sheet_name='Hoja6')  # resultados finales
-h7 = pd.read_excel('./comp_results/tauber29abr2022.xlsx', sheet_name='Hoja7')  # info de la compe
+h1 = pd.read_excel('./comp_results/incheo2may2022.xlsx', sheet_name='Hoja1', skiprows=1, header=1)  # poules
+h2 = pd.read_excel('./comp_results/incheo2may2022.xlsx', sheet_name='Hoja2')  # resultados de la poule
+h3 = pd.read_excel('./comp_results/incheo2may2022.xlsx', sheet_name='Hoja3')  # tablas preliminares
+h4 = pd.read_excel('./comp_results/incheo2may2022.xlsx', sheet_name='Hoja4')  # tablas 256 a 16
+h5 = pd.read_excel('./comp_results/incheo2may2022.xlsx', sheet_name='Hoja5')  # tablas T8 a final
+h6 = pd.read_excel('./comp_results/incheo2may2022.xlsx', sheet_name='Hoja6')  # resultados finales
+h7 = pd.read_excel('./comp_results/incheo2may2022.xlsx', sheet_name='Hoja7')  # info de la compe
 
 
 current = get_competition(info=h7,
@@ -35,7 +35,7 @@ if current['id'].value_counts().max() != 1:
 else:
     final_df = pd.concat(objs=[df, current], ignore_index=True, sort=False)
     print(final_df.tail(1))
-    final_df.to_csv('./new_results.csv')
+    final_df.to_csv('./data/new_results.csv')
 
 
 
