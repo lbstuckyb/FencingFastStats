@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import pandas as pd
 import numpy as np
 
@@ -8,7 +10,27 @@ import numpy as np
 
 results = pd.DataFrame()
 match = pd.DataFrame()
-ccc = [1657,1727,1823,1884]
+ccc = [687,
+       941, 954, 960, 966,
+       992,
+       1082, 1094, 1098, 1107,
+       1131,
+       1174, 1170, 1163, 1157,
+       1224,
+       1259, 1268, 1273, 1281,
+       1302,
+       1325, 1334, 1339, 1347,
+       1367, 1376, 1381, 1389,
+       1410,
+       1573, 1579, 1585, 1594,
+       1651, 1655, 1657, 1661,
+       1669, 1675,  1712, #1681 no sirve
+       1727, 1733, 1739, 1745,
+       1810, 1818, 1823, 1832,
+       1856,
+       1871, 1879, 1884, 1893,
+       1919, 1927, 1932, 1938,
+       ]
 
 
 for e in ccc:
@@ -96,8 +118,8 @@ for e in ccc:
     comp['event'] = comp['event'].apply(lambda x:x.strip())
     comp['type'] = comp['type'].apply(lambda x:x.strip())
     comp['place'] = comp['place'].apply(lambda x:x.strip())
-    #comp['date'] = comp['date'].apply(lambda x:x.split(' ')[0])
-    #comp['date'] = comp['date'].apply(lambda x:datetime.strptime(x,'%m/%d/%Y'))
+    comp['date'] = comp['date'].apply(lambda x:x.split(' ')[0])
+    comp['date'] = comp['date'].apply(lambda x:datetime.strptime(x,'%d-%m-%Y'))
 
 
     # eliminar los datos de poule de personas que no llegaron a la competencia
@@ -170,9 +192,10 @@ for e in ccc:
 
 
     results = pd.concat(objs=[results, comp], ignore_index=True, sort=False)
+    print(e)
 
 print(results)
 
 
 
-results.to_csv('./efj.csv')
+# results.to_csv('./EF.csv')

@@ -29,20 +29,19 @@ csv_raw2 = 'https://raw.githubusercontent.com/lbstuckyb/FencingFastStats/master/
 df = pd.read_csv(csv_raw2)
 
 df.dropna(subset = ["date"], inplace=True)
-df.drop(columns=['Unnamed: 0'],inplace=True)
+df.drop(columns=['Unnamed: 0'], inplace=True)
 df['date'] = df['date'].astype(str)
 df['date'] = df['date'].apply(lambda x: x.split(' ')[0])
 
-df['date'] = df['date'].apply(lambda x:dt.datetime.strptime(x, '%Y-%m-%d'))
+df['date'] = df['date'].apply(lambda x: dt.datetime.strptime(x, '%Y-%m-%d'))
 
 # Colombian Data
 csv_raw3 = 'https://raw.githubusercontent.com/lbstuckyb/FencingFastStats/master/data/efj.csv'
 col_df = pd.read_csv(csv_raw3)
-col_df.drop(columns=['Unnamed: 0'],inplace=True)
+col_df.drop(columns=['Unnamed: 0'], inplace=True)
 col_df['date'] = col_df['date'].astype(str)
 col_df['date'] = col_df['date'].apply(lambda x: x.split(' ')[0])
 col_df['date'] = col_df['date'].apply(lambda x:dt.datetime.strptime(x, '%d-%m-%Y'))
-print(col_df.columns)
 
 features = [{'label':'Posición final','value':'POS'},
             {'label':'Ingreso a cuadro de 96','value':'T96+'},
