@@ -25,7 +25,7 @@ csv_raw1 = StringIO(url1)
 rank = pd.read_csv(csv_raw1)
 
 # international Data
-csv_raw2 = 'https://raw.githubusercontent.com/lbstuckyb/FencingFastStats/master/data/updated_results.csv'
+csv_raw2 = 'https://raw.githubusercontent.com/lbstuckyb/FencingFastStats/master/final_results/results27may2022.csv'
 df = pd.read_csv(csv_raw2)
 
 df.dropna(subset=["date"], inplace=True)
@@ -36,7 +36,7 @@ df['date'] = df['date'].apply(lambda x: x.split(' ')[0])
 df['date'] = df['date'].apply(lambda x: dt.datetime.strptime(x, '%Y-%m-%d'))
 
 # Colombian Data
-csv_raw3 = 'https://raw.githubusercontent.com/lbstuckyb/FencingFastStats/master/data/EF.csv'
+csv_raw3 = 'https://raw.githubusercontent.com/lbstuckyb/FencingFastStats/master/data/COL.csv'
 col_df = pd.read_csv(csv_raw3)
 col_df.drop(columns=['Unnamed: 0'], inplace=True)
 col_df['date'] = col_df['date'].astype(str)
@@ -77,7 +77,7 @@ app.layout = html.Div([
         ]),
         html.Div(id='tabs-content')
     ], style={'padding': 30}),
-    html.H3('Haz Esgrima, Descubre el Mundo', style={'font-size': 10, 'text-align': 'center', 'font-style': 'italic'})
+    html.H3('No llore, Toque a una luz', style={'font-size': 10, 'text-align': 'center', 'font-style': 'italic'})
 ], style={'font-family': 'verdana', 'color': 'rgb(0, 72, 132)'})
 
 
