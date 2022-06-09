@@ -1,13 +1,13 @@
 import dash
-from dash import dcc
-from dash import html
+import dash_core_components as dcc
+import dash_html_components as html
 import plotly.graph_objs as go
 import pandas as pd
 import numpy as np
 from dash.dependencies import Input, Output, State
 import datetime as dt
 import dash_auth
-from dash import dash_table
+import dash_table
 import requests
 from io import StringIO
 
