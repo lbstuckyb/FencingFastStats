@@ -766,8 +766,13 @@ def update_table_ind_nal(esg, cat, time_frame):  #
 
     df1 = col_df[col_df['date'] > time_frame]
     df2 = df1[df1['category'].isin(cat)].copy()
-    dff = df2[df2['name'].isin(esg)].groupby(['id', 'name', 'liga', 'weapon', 'gender'], as_index=False).agg(
-        {'age': 'max',
+    dff = df2[df2['name'].isin(esg)].groupby(
+        ['id', 'name'], as_index=False).agg(
+        {'liga': 'last',
+         'club': 'last',
+         'weapon': 'last',
+         'gender': 'last',
+         'age': 'max',
          'comp': 'count',
          'POS': 'mean',
          # 'Q':'mean',
