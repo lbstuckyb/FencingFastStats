@@ -46,9 +46,9 @@ col_df['date'] = col_df['date'].apply(lambda x: dt.datetime.strptime(x, '%Y-%m-%
 #                        keep='first', inplace=True, ignore_index=True)
 
 features = [{'label': 'Posición final', 'value': 'POS'},
-            {'label': 'Ingreso a cuadro de 96', 'value': 'T96+'},
-            {'label': 'Ingreso a cuadro de 64', 'value': 'T64+'},
-            {'label': 'Avanzar la poule', 'value': 'Q'},
+            # {'label': 'Ingreso a cuadro de 96', 'value': 'T96+'},
+            # {'label': 'Ingreso a cuadro de 64', 'value': 'T64+'},
+            # {'label': 'Avanzar la poule', 'value': 'Q'},
             {'label': 'Indicador de la poule', 'value': 'PIND'},
             {'label': 'Victorias en la poule', 'value': 'PVICT'},
             {'label': 'Toques recibidos en poule', 'value': 'PTR'},
@@ -60,24 +60,26 @@ features = [{'label': 'Posición final', 'value': 'POS'},
             {'label': 'Promedio toques recibidos en cuadro', 'value': 'TTR'},
             {'label': 'Promedio toques dados en cuadro', 'value': 'TTD'},
             {'label': 'Diferencia promedio toques en combate de cuadro', 'value': 'TMT-DIFF'},
-            {'label': 'Promedio de victorias en cuadro', 'value': 'TMVAVG'}]
+            # {'label': 'Promedio de victorias en cuadro', 'value': 'TMVAVG'}
+            ]
 
 # auth = dash_auth.BasicAuth(app,USERNAME_PASSWORD_PAIRS)
 
 app.layout = html.Div([
-    html.H1('Federación Colombiana de Esgrima', style={'font-size': 60, 'text-align': 'center', 'font-style': 'bold'}),
-    html.H2('Seguimiento Estadístico', style={'font-size': 30, 'text-align': 'center'}),
+    html.H1('FCE STATS', style={'font-size': 60, 'text-align': 'center',
+                                'font-style': 'bold', 'font-family': 'verdana'}),
+    # html.H2('Seguimiento Estadístico', style={'font-size': 30, 'text-align': 'center'}),
     html.Div([
-        dcc.Tabs(id="tabs", value='tab-1', children=[
-            dcc.Tab(label='Internacional', value='tab-1'),
-            dcc.Tab(label='Colombia', value='tab-2'),
-            dcc.Tab(label='Análisis de Variables', value='tab-3'),
-            dcc.Tab(label='Información', value='tab-4')
+        dcc.Tabs(id="tabs", value='tab-2', children=[
+            # dcc.Tab(label='Internacional', value='tab-1'),
+            dcc.Tab(label='Competencias Nacionales', value='tab-2'),
+            # dcc.Tab(label='Análisis de Variables', value='tab-3'),
+            dcc.Tab(label='Información de Variables', value='tab-4')
 
         ]),
         html.Div(id='tabs-content')
     ], style={'padding': 30}),
-    html.H3('No llore, Toque a una luz', style={'font-size': 10, 'text-align': 'center', 'font-style': 'italic'})
+    html.H3('Powered by Lucas Stucky - LBSB', style={'font-size': 10, 'text-align': 'center', 'font-style': 'italic'})
 ], style={'font-family': 'verdana', 'color': 'rgb(0, 72, 132)'})
 
 
@@ -287,16 +289,16 @@ def render_content(tab):
                             html.Div([html.Div([
                                 html.H4('Periodos de tiempo', style={'justify-content': 'center',
                                                                      'display': 'flex'}),
-                                html.Div([dcc.DatePickerRange(id='nal-custom-date-range',
-                                                              month_format='MMMM Y',
-                                                              end_date_placeholder_text='MMMM Y',
-                                                              start_date_placeholder_text='MMMM Y',
-                                                              min_date_allowed=df['date'].min(),
-                                                              clearable=True, )
-
-                                          ], style={'justify-content': 'center', 'display': 'flex',
-                                                    'vertical-align': 'middle', 'width': '100%',
-                                                    'font-size': 13}),
+                                # html.Div([dcc.DatePickerRange(id='nal-custom-date-range',
+                                #                               month_format='MMMM Y',
+                                #                               end_date_placeholder_text='MMMM Y',
+                                #                               start_date_placeholder_text='MMMM Y',
+                                #                               min_date_allowed=df['date'].min(),
+                                #                               clearable=True, )
+                                #
+                                #           ], style={'justify-content': 'center', 'display': 'flex',
+                                #                     'vertical-align': 'middle', 'width': '100%',
+                                #                     'font-size': 13}),
                                 html.Div([dcc.RadioItems(id='nal-timeframes',
                                                          options=[
                                                              {'label': 'Todo', 'value': pd.Timestamp(
@@ -422,20 +424,6 @@ def render_content(tab):
 
             Posición final promedio del atleta.
 
-            ##### T96+
-
-            Cantidad de ingresos a cuadro de 96
-
-            ##### T64+
-
-            Cantidad de ingresos a cuadro de 64
-
-            ##### Q
-
-            Frecuencia con la que el atleta se clasifica a cuadro de eliminación directa
-            superando la ronda de poules, ya sea por ser exento de la ronda de poule o
-            por su rendimiento en la ronda de poule.
-
             ##### PIND
 
             Indicador de poules.
@@ -480,15 +468,6 @@ def render_content(tab):
 
             Promedio del diferencial de toques recibidos y dados por combate de cuadro de
             eliminación directa
-
-            ##### TMVAVG
-
-            Promedio de victorias en cuadro de eliminación directa
-
-            ##### PEXMPT
-
-            Frecuencia con la que el esgrimista es exento de la poule y pasa directo al
-            cuadro de 64 de la competencia
 
             ##### PM1V%
             Porcentaje de victorias del primer combate de la poule. Indica la frecuencia
@@ -780,10 +759,10 @@ def update_graph(esg, yaxis_indres, comp, time_frame):
 @app.callback(Output('tabla-individual-nacional', 'children'),
               [Input('nal-res-esg-picker', 'value'),
                Input('nal-category', 'value'),
-               Input('nal-custom-date-range', 'start_date'),
-               Input('nal-custom-date-range', 'end_date'),
+               # Input('nal-custom-date-range', 'start_date'),
+               # Input('nal-custom-date-range', 'end_date'),
                Input('nal-timeframes', 'value')])
-def update_table_ind_nal(esg, cat, start_date, end_date, time_frame):  #
+def update_table_ind_nal(esg, cat, time_frame):  #
 
     df1 = col_df[col_df['date'] > time_frame]
     df2 = df1[df1['category'].isin(cat)].copy()
@@ -847,7 +826,7 @@ def update_nal_graph(esg, yaxis_indres, comp, time_frame):
                                      mode='markers+lines+text',
                                      marker=dict(size=10),
                                      marker_symbol=df3['marker'],
-                                     text=df3[yaxis_indres],
+                                     text=round(df3[yaxis_indres], 2),
                                      textposition='middle left',
                                      showlegend=True,
                                      connectgaps=True,
