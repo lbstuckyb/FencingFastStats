@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 
 results = pd.DataFrame()
-results = pd.read_csv('COL.csv')
+# results = pd.read_csv('COL.csv')
 # results.drop('Unnamed: 0', inplace=True)
 match = pd.DataFrame()
 # ccc = [682, 683, 684, 685, 686, 687,
@@ -212,4 +212,4 @@ results.drop_duplicates(subset=['id', 'comp', 'date', 'category'],
 
 
 
-results.to_csv('./COL.csv')
+# results.to_csv('./COL.csv')
