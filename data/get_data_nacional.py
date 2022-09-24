@@ -5,7 +5,8 @@ import numpy as np
 
 results = pd.DataFrame()
 # results = pd.read_csv('COL.csv')
-# results.drop('Unnamed: 0', inplace=True)
+# results.drop('Unnamed: 0', inplace=True, axis=1)
+# print(results)
 match = pd.DataFrame()
 # ccc = [682, 683, 684, 685, 686, 687,
 #        949,950,951,952,953,954,955,956,957,958,959,960,961,962,963,964,965,966,
@@ -38,11 +39,13 @@ match = pd.DataFrame()
 # ccc = [2050,2051,2052,2053,2054,2055,2056,2057,2058,2059,2060,2061,2062,2063,2064,2065,2066,2067,
 #        2071,2072,2073,2074,2075,2076] # comp buga jun 2022
 
-ccc = [2164,2165,2166,2167,2168,2169,
-       2170,2171,2172,2173,2174,2175,
-       # 2176,
-       2177,2178,2179,2180,2181
-       ] # comp GN medellin ago 2022
+# ccc = [2164,2165,2166,2167,2168,2169,
+#        2170,2171,2172,2173,2174,2175,
+#        # 2176,
+#        2177,2178,2179,2180,2181
+#        ] # comp GN medellin ago 2022
+
+ccc = [2206,2207,2208,2209,2210,2211] # comp GN Mayores CAlI ago 2022
 
 
 for e in ccc:
