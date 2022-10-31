@@ -3,10 +3,10 @@ from datetime import datetime
 import pandas as pd
 import numpy as np
 
-results = pd.DataFrame()
-# results = pd.read_csv('COL.csv')
-# results.drop('Unnamed: 0', inplace=True, axis=1)
-# print(results)
+# results = pd.DataFrame()
+results = pd.read_csv('COL.csv')
+results.drop('Unnamed: 0', inplace=True, axis=1)
+print(results)
 match = pd.DataFrame()
 # ccc = [682, 683, 684, 685, 686, 687,
 #        949,950,951,952,953,954,955,956,957,958,959,960,961,962,963,964,965,966,
@@ -45,7 +45,20 @@ match = pd.DataFrame()
 #        2177,2178,2179,2180,2181
 #        ] # comp GN medellin ago 2022
 
-ccc = [2206,2207,2208,2209,2210,2211] # comp GN Mayores CAlI ago 2022
+# ccc = [2206,2207,2208,2209,2210,2211] # comp GN Mayores CAlI ago 2022
+
+ccc = [2220,
+       # 2221, EM M15
+       2222,
+       # 2223, EF M15
+       2224,2225,
+       2226,2227,2228,2229,2230,2231,
+       # 2232, FF Juv arroja error
+       2233,2234,2235,2236,2237,
+       2241,
+       # 2242, FF may no tiene desglose de resultados
+       2243,2244,2245,2246
+       ]
 
 
 for e in ccc:
@@ -215,4 +228,4 @@ results.drop_duplicates(subset=['id', 'comp', 'date', 'category'],
 
 
 
-# results.to_csv('./COL.csv')
+results.to_csv('./COL.csv')
