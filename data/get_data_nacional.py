@@ -3,7 +3,7 @@ from datetime import datetime
 import pandas as pd
 import numpy as np
 
-# results = pd.DataFrame()
+results = pd.DataFrame()
 results = pd.read_csv('COL.csv')
 results.drop('Unnamed: 0', inplace=True, axis=1)
 print(results)
@@ -228,4 +228,4 @@ results.drop_duplicates(subset=['id', 'comp', 'date', 'category'],
 
 
 
-results.to_csv('./COL.csv')
+# results.to_csv('./COL.csv')
