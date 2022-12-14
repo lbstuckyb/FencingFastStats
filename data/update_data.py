@@ -101,7 +101,7 @@ print(comp.tail())
 
 
 # import old data
-df = pd.read_csv('./final_results/results3may2022.csv')
+df = pd.read_csv('../final_results/results3may2022.csv')
 
 
 # concat new and oldd
@@ -112,5 +112,5 @@ final_df.drop(columns=[col for col in final_df.columns if 'Unn' in col], inplace
 print(df.columns)
 print(final_df.columns)
 
-final_df.to_csv('./final_results/results27may2022.csv')
-final_df.to_csv('./data/updated_results.csv')
+final_df.to_csv('../final_results/results15dec2022.csv')
+final_df.to_csv('../data/updated_results.csv')

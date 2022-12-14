@@ -23,7 +23,7 @@ def get_competition(info=None,
     ###### arreglando las poules ################
 
     for i in range(len(h1)):
-        if type(h1.loc[i, (h1.columns[0])]) == str and len(h1.loc[i, (h1.columns[0])]) > 5 and h1.loc[i, (
+        if type(h1.loc[i, (h1.columns[0])]) == str and len(h1.loc[i, (h1.columns[0])]) > 7 and h1.loc[i, (
         h1.columns[0])].replace(' ', '')[:4] != 'Árbi' and h1.loc[i, (h1.columns[0])].replace(' ', '')[:4] != 'POOL':
             h1.loc[i, 'n'] = 1
 
