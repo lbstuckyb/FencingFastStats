@@ -119,21 +119,9 @@ class FieClient:
             tournament_id = int(m.group(2))
         return {**result, "tournament_id": tournament_id}
 
-    def fetch_results_ranking(
-        self, season: int, comp_id: int, force: bool = False, page_size: int = 200
+    def _fetch_paginated_json(
+        self, url: str, base_params: dict, cache_key: str, force: bool, page_size: int
     ) -> list:
-        """Fetch the full final-ranking list via the plain JSON API the site's
-        client-side pagination calls (discovered by inspecting the site's JS
-        bundles — not documented anywhere): `GET
-        /api/fie/competition/{season}/{comp_id}/results/ranking?page=N&pageSize=M`.
-        Unlike the SSR page (which always embeds page 1 of 24 server-side —
-        later pages are client-side only), this endpoint honors `pageSize`
-        directly, so one or two requests cover even large start lists.
-
-        Cached whole (all pages already concatenated) to
-        `{cache_dir}/results-ranking-{season}-{comp_id}.json.gz`.
-        """
-        cache_key = f"results-ranking-{season}-{comp_id}"
         cache_path = self._cache_path(cache_key)
         if not force and cache_path.exists():
             with gzip.open(cache_path, "rt", encoding="utf-8") as f:
@@ -142,11 +130,10 @@ class FieClient:
         items: list = []
         page = 1
         while True:
-            url = f"{BASE_URL}/api/fie/competition/{season}/{comp_id}/results/ranking"
             self._throttle()
             resp = self.session.get(
                 url,
-                params={"page": page, "pageSize": page_size},
+                params={**base_params, "page": page, "pageSize": page_size},
                 headers={"Accept": "application/json"},
                 timeout=self.timeout,
             )
@@ -165,3 +152,76 @@ class FieClient:
         with gzip.open(cache_path, "wt", encoding="utf-8") as f:
             json.dump(items, f)
         return items
+
+    def fetch_results_ranking(
+        self, season: int, comp_id: int, force: bool = False, page_size: int = 200
+    ) -> list:
+        """Fetch the full final-ranking list via the plain JSON API the site's
+        client-side pagination calls (discovered by inspecting the site's JS
+        bundles — not documented anywhere): `GET
+        /api/fie/competition/{season}/{comp_id}/results/ranking?page=N&pageSize=M`.
+        Unlike the SSR page (which always embeds page 1 of 24 server-side —
+        later pages are client-side only), this endpoint honors `pageSize`
+        directly, so one or two requests cover even large start lists.
+
+        Cached whole (all pages already concatenated) to
+        `{cache_dir}/results-ranking-{season}-{comp_id}.json.gz`.
+        """
+        url = f"{BASE_URL}/api/fie/competition/{season}/{comp_id}/results/ranking"
+        return self._fetch_paginated_json(
+            url, {}, f"results-ranking-{season}-{comp_id}", force, page_size
+        )
+
+    def fetch_seasons(self, force: bool = False) -> list[int]:
+        """`GET /api/fie/competitions/seasons` -> sorted list of season years
+        fie.org has any competition data for (verified live: 1953-2027 as of
+        2026-07-14). Use to validate a season before calling
+        `fetch_competitions_list` — see that method's docstring for why.
+        """
+        cache_key = "seasons"
+        cache_path = self._cache_path(cache_key)
+        if not force and cache_path.exists():
+            with gzip.open(cache_path, "rt", encoding="utf-8") as f:
+                return json.load(f)
+
+        url = f"{BASE_URL}/api/fie/competitions/seasons"
+        self._throttle()
+        resp = self.session.get(
+            url, params={"pageSize": 200}, headers={"Accept": "application/json"}, timeout=self.timeout
+        )
+        self._last_request_at = time.monotonic()
+        if resp.status_code != 200:
+            raise FetchError(f"GET {url} -> HTTP {resp.status_code}")
+        seasons = sorted(item["label"] for item in resp.json()["items"])
+
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        with gzip.open(cache_path, "wt", encoding="utf-8") as f:
+            json.dump(seasons, f)
+        return seasons
+
+    def fetch_competitions_list(
+        self, season: int, type_: str = "I", force: bool = False, page_size: int = 1000
+    ) -> list[dict]:
+        """`GET /api/fie/competitions?season=&type=&page=&pageSize=` -> raw
+        competition metadata rows for a season (reverse-engineered from the
+        site's ts-rest contract, `cHy4glSy.js` chunk, on 2026-07-14).
+
+        `type_` (`'I'` individual / `'E'` team) is honored server-side and
+        verified to partition `totalFound` correctly. **`category`
+        ('S'/'J'/'C'/'V'/'GV') is accepted by the query schema but silently
+        ignored server-side** (requesting `category=S` vs `category=V`
+        returns an identical unfiltered `totalFound`) — filter `category` on
+        the response client-side instead (see `discover.list_competitions`).
+        **`season` itself is not validated**: an out-of-range value (e.g.
+        1913) silently no-ops the season filter and returns fie.org's
+        *entire* unfiltered competitions table instead of an empty page —
+        always check against `fetch_seasons()` first.
+
+        The legacy `POST /competitions/search` endpoint mentioned in the
+        original plan is dead (404 on every guessed path as of 2026-07-14);
+        this REST endpoint supersedes it.
+        """
+        url = f"{BASE_URL}/api/fie/competitions"
+        return self._fetch_paginated_json(
+            url, {"season": season, "type": type_}, f"competitions-list-{season}-{type_}", force, page_size
+        )

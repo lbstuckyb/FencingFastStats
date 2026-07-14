@@ -7,6 +7,7 @@ import pandas as pd
 
 from ffs import __version__
 from ffs import devalue, schema
+from ffs.discover import list_competitions
 from ffs.fie_client import FieClient
 from ffs.parse import parse_competition
 
@@ -83,6 +84,26 @@ def cmd_scrape(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_discover(args: argparse.Namespace) -> int:
+    client = FieClient()
+    seasons = client.fetch_seasons(force=args.force)
+    if args.season not in seasons:
+        print(f"season {args.season} not in fie.org's known seasons ({min(seasons)}-{max(seasons)})", file=sys.stderr)
+        return 1
+
+    comps = list_competitions(
+        client, args.season, weapon=args.weapon, gender=args.gender, force=args.force
+    )
+    comps.sort(key=lambda c: (c.get("startDate") or "", c.get("competitionId")))
+    for c in comps:
+        print(
+            f"{c['season']}/{c['competitionId']}\t{c.get('startDate')}\t{c.get('weapon')}"
+            f"{c.get('gender')}\t{c.get('hasResults')}\t{c.get('name')}"
+        )
+    print(f"{len(comps)} Senior Individual competition(s)", file=sys.stderr)
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="ffs", description="FencingFastStats CLI")
     parser.add_argument("--version", action="version", version=__version__)
@@ -93,6 +114,13 @@ def main() -> None:
     scrape_parser.add_argument("--dump", action="store_true", help="Dump decoded query bodies to data/raw_cache/ for inspection")
     scrape_parser.add_argument("--force", action="store_true", help="Bypass the disk cache and re-fetch from fie.org")
     scrape_parser.set_defaults(func=cmd_scrape)
+
+    discover_parser = subparsers.add_parser("discover", help="List Senior Individual competitions for a season")
+    discover_parser.add_argument("--season", required=True, type=int)
+    discover_parser.add_argument("--weapon", choices=["F", "E", "S"], help="Filter by weapon")
+    discover_parser.add_argument("--gender", choices=["M", "F"], help="Filter by gender")
+    discover_parser.add_argument("--force", action="store_true", help="Bypass the disk cache and re-fetch from fie.org")
+    discover_parser.set_defaults(func=cmd_discover)
 
     subparsers.add_parser("build-stats", help="Build stats/ELO/H2H tables (not yet implemented)")
     subparsers.add_parser("validate", help="Validate parity against legacy data (not yet implemented)")
