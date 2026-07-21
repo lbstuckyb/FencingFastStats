@@ -20,10 +20,12 @@ import unicodedata
 from datetime import timedelta
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 LEGACY_CSV = Path("data/legacy/updated_results.csv")
 TOL_DAYS = 1
+PARITY_METRICS = ["POS", "PVICT", "PTD", "PTR", "PIND", "Q", "TMVAVG"]
 
 
 def normalize_name(name: str | None) -> str:
@@ -73,3 +75,83 @@ def match_competitions(legacy_comps: pd.DataFrame, canonical: pd.DataFrame) -> l
                 matched_id = within.iloc[0]["competition_id"]
         results.append({"legacy": row, "competition_id": matched_id})
     return results
+
+
+def load_legacy_results(csv_path: Path | str = LEGACY_CSV) -> pd.DataFrame:
+    """Full per-fencer legacy rows, with `comp`/`place`/`date`/`weapon`/`gender`
+    (the same competition-event key `match_competitions` uses) plus the
+    metric columns M4's parity check needs -- already legacy-named the same
+    as `stats.compute_stats`'s output (POS, PVICT, PTD, PTR, PIND, Q, TMVAVG)."""
+    cols = ["comp", "place", "date", "weapon", "gender", "name", "country"] + PARITY_METRICS
+    df = pd.read_csv(csv_path, usecols=cols)
+    df["date"] = pd.to_datetime(df["date"], format="mixed").dt.date
+    df["norm_name"] = df["name"].apply(normalize_name)
+    return df
+
+
+def _agree(legacy: pd.Series, canonical: pd.Series) -> pd.Series:
+    """Element-wise agreement, tolerant of float rounding; both-NaN counts
+    as agreement (e.g. TMVAVG null on both sides when Q==0)."""
+    legacy = pd.to_numeric(legacy, errors="coerce")
+    canonical = pd.to_numeric(canonical, errors="coerce")
+    both_na = legacy.isna() & canonical.isna()
+    valid = legacy.notna() & canonical.notna()
+    close = pd.Series(False, index=legacy.index)
+    close[valid] = np.isclose(legacy[valid].astype(float), canonical[valid].astype(float), atol=0.01)
+    return both_na | close
+
+
+def compute_parity(
+    legacy_results: pd.DataFrame,
+    legacy_comps: pd.DataFrame,
+    canonical_competitions: pd.DataFrame,
+    canonical_stats: pd.DataFrame,
+    canonical_athletes: pd.DataFrame,
+) -> dict:
+    """Fencer-level parity report: matches legacy competitions to canonical
+    ones (same logic as `match_competitions`), then matches individual
+    fencers within each by normalized name + country, and reports per-metric
+    and overall agreement rates over `PARITY_METRICS`.
+    """
+    comp_matches = match_competitions(legacy_comps, canonical_competitions)
+    match_map = {
+        (m["legacy"]["comp"], m["legacy"]["place"], m["legacy"]["date"], m["legacy"]["weapon"], m["legacy"]["gender"]): m["competition_id"]
+        for m in comp_matches
+        if m["competition_id"] is not None
+    }
+
+    legacy_results = legacy_results.copy()
+    legacy_results["competition_id"] = legacy_results.apply(
+        lambda r: match_map.get((r["comp"], r["place"], r["date"], r["weapon"], r["gender"])), axis=1
+    )
+    matched_legacy = legacy_results.dropna(subset=["competition_id"])
+
+    athletes = canonical_athletes.copy()
+    athletes["norm_name"] = athletes["name"].apply(normalize_name)
+    stats_with_name = canonical_stats.merge(
+        athletes[["athlete_id", "norm_name", "country"]], on="athlete_id", how="left"
+    )
+
+    joined = matched_legacy.merge(
+        stats_with_name, on=["competition_id", "norm_name", "country"], how="inner", suffixes=("_legacy", "")
+    )
+
+    n_competitions = joined["competition_id"].nunique()
+    n_fencers = len(joined)
+
+    per_metric = {}
+    for metric in PARITY_METRICS:
+        agree = _agree(joined[f"{metric}_legacy"], joined[metric])
+        per_metric[metric] = agree.mean() if len(agree) else float("nan")
+
+    overall_agree = pd.concat(
+        [_agree(joined[f"{m}_legacy"], joined[m]) for m in PARITY_METRICS], ignore_index=True
+    )
+    overall_rate = overall_agree.mean() if len(overall_agree) else 0.0
+
+    return {
+        "n_competitions": n_competitions,
+        "n_fencers": n_fencers,
+        "per_metric": per_metric,
+        "overall_rate": overall_rate,
+    }

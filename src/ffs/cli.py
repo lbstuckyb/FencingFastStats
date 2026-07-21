@@ -6,11 +6,16 @@ from pathlib import Path
 import pandas as pd
 
 from ffs import __version__
-from ffs import devalue, schema
+from ffs import devalue, elo, h2h, schema, stats
 from ffs.discover import list_competitions
 from ffs.fie_client import FieClient
 from ffs.parse import parse_competition
-from ffs.validate_legacy import load_legacy_competitions, match_competitions
+from ffs.validate_legacy import (
+    compute_parity,
+    load_legacy_competitions,
+    load_legacy_results,
+    match_competitions,
+)
 
 CANONICAL_DIR = Path("data/canonical")
 
@@ -217,6 +222,28 @@ def cmd_discover(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_build_stats(args: argparse.Namespace) -> int:
+    bouts = pd.read_parquet(CANONICAL_DIR / "bouts.parquet")
+    results = pd.read_parquet(CANONICAL_DIR / "results.parquet")
+    competitions = pd.read_parquet(CANONICAL_DIR / "competitions.parquet")
+
+    stats_df = stats.compute_stats(bouts, results)
+    ratings_history = elo.compute_elo(bouts, competitions)
+    h2h_df, h2h_bouts_df = h2h.build_h2h(bouts, competitions)
+
+    CANONICAL_DIR.mkdir(parents=True, exist_ok=True)
+    stats_df.to_parquet(CANONICAL_DIR / "stats_fencer_comp.parquet", index=False)
+    ratings_history.to_parquet(CANONICAL_DIR / "ratings_history.parquet", index=False)
+    h2h_df.to_parquet(CANONICAL_DIR / "h2h.parquet", index=False)
+    h2h_bouts_df.to_parquet(CANONICAL_DIR / "h2h_bouts.parquet", index=False)
+
+    print(f"stats_fencer_comp: {len(stats_df)} rows")
+    print(f"ratings_history:   {len(ratings_history)} rows")
+    print(f"h2h:               {len(h2h_df)} rows")
+    print(f"h2h_bouts:         {len(h2h_bouts_df)} rows")
+    return 0
+
+
 def cmd_validate(args: argparse.Namespace) -> int:
     comp_path = CANONICAL_DIR / "competitions.parquet"
     if not comp_path.exists():
@@ -240,7 +267,25 @@ def cmd_validate(args: argparse.Namespace) -> int:
             leg = m["legacy"]
             print(f"  {leg['date']}  {leg['weapon']}{leg['gender']}  {leg['comp']} ({leg['place']})")
 
-    return 0 if rate >= 0.95 else 1
+    comp_ok = rate >= 0.95
+
+    stats_path = CANONICAL_DIR / "stats_fencer_comp.parquet"
+    if not stats_path.exists():
+        print(f"\n{stats_path} does not exist yet -- run `ffs build-stats` for the parity report", file=sys.stderr)
+        return 0 if comp_ok else 1
+
+    legacy_results = load_legacy_results()
+    stats_df = pd.read_parquet(stats_path)
+    athletes = pd.read_parquet(CANONICAL_DIR / "athletes.parquet")
+    parity = compute_parity(legacy_results, legacy_comps, canonical, stats_df, athletes)
+
+    print(f"\nfencer parity: {parity['n_fencers']} matched fencer-rows across {parity['n_competitions']} competitions")
+    for metric, value in parity["per_metric"].items():
+        print(f"  {metric:8s} {value:.1%}")
+    print(f"  {'overall':8s} {parity['overall_rate']:.1%}")
+
+    parity_ok = parity["n_competitions"] >= 3 and parity["overall_rate"] >= 0.99
+    return 0 if comp_ok and parity_ok else 1
 
 
 def main() -> None:
@@ -278,7 +323,8 @@ def main() -> None:
     validate_parser = subparsers.add_parser("validate", help="Competition-matching report against legacy CSV")
     validate_parser.set_defaults(func=cmd_validate)
 
-    subparsers.add_parser("build-stats", help="Build stats/ELO/H2H tables (not yet implemented)")
+    build_stats_parser = subparsers.add_parser("build-stats", help="Build stats/ELO/H2H tables from canonical parquet")
+    build_stats_parser.set_defaults(func=cmd_build_stats)
 
     args = parser.parse_args()
     if args.command is None:

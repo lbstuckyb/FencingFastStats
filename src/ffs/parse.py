@@ -153,6 +153,17 @@ def parse_competition(
                 if score_a is None or score_b is None:
                     status = "forfeit"
                     winner = None
+                elif score_a == 0 and score_b == 0:
+                    # A real fenced bout can't end 0-0 -- this is a no-show
+                    # default result (fie.org still fills in `v`/a winner,
+                    # just with no touches exchanged). Legacy's pipeline
+                    # excluded these from all poule stats (its "D with tr=0"
+                    # filter); we do the same by tagging it 'forfeit' rather
+                    # than 'ok', while still keeping the recorded winner
+                    # (consistent with how DE-phase forfeits already carry a
+                    # winner -- see the tableau loop below).
+                    status = "forfeit"
+                    winner = athlete_a if match_a.get("v") else athlete_b
                 else:
                     status = "ok"
                     winner = athlete_a if match_a.get("v") else athlete_b

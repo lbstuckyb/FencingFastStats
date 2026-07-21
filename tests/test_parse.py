@@ -140,3 +140,47 @@ def test_245_bout_counts(tables_245):
     assert len(bouts) == 471
     assert (bouts["status"] == "bye").sum() == 62
     assert (bouts["status"] == "forfeit").sum() == 0
+
+
+def test_poule_0_0_no_show_classified_as_forfeit():
+    """A fenced bout can never legitimately end 0-0 -- fie.org still tags
+    this no-show case with a normal `v` winner flag, but legacy's pipeline
+    excluded it from all poule stats. Construct a minimal synthetic pool
+    payload (2 fencers, one 0-0 match) and assert the parser now tags it
+    'forfeit' (with the winner kept) instead of 'ok'."""
+    queries = {
+        ("competitions", 999, 2099): {
+            "name": "Test Open", "location": "Testville", "country": "USA",
+            "startDate": "2020-01-01", "weapon": "E", "gender": "M",
+            "category": "S", "competitionCategory": "1", "entriesCount": 2,
+        },
+        ("competitions", "results", "pools", 999, 2099): {
+            "pools": [
+                {
+                    "poolId": 1,
+                    "rows": [
+                        {"fencerId": 100, "name": "A", "nationality": "USA",
+                         "matches": [None, {"score": 0, "v": True}]},
+                        {"fencerId": 200, "name": "B", "nationality": "FRA",
+                         "matches": [{"score": 0, "v": False}, None]},
+                    ],
+                }
+            ]
+        },
+        ("competitions", "pool", "results", 999, 2099): {"rows": []},
+        ("competitions", "results", "tableau", 999, 2099): {"tableau": []},
+    }
+    ranking_items = [
+        {"fencer": {"id": 100, "name": "A", "countryCode": "USA", "date": "1990-01-01"}, "rank": 1, "points": 10},
+        {"fencer": {"id": 200, "name": "B", "countryCode": "FRA", "date": "1990-01-01"}, "rank": 2, "points": 8},
+    ]
+    tables = parse_competition(
+        season=2099, comp_id=999, tournament_id=1, queries=queries, ranking_items=ranking_items,
+    )
+    bouts = tables["bouts"]
+    assert len(bouts) == 1
+    row = bouts.iloc[0]
+    assert row["status"] == "forfeit"
+    assert row["score_a"] == 0
+    assert row["score_b"] == 0
+    assert row["winner"] == 100
