@@ -6,6 +6,5 @@ build/
 dist/
 
 data/raw_cache/
-data/canonical/
 
 .DS_Store
