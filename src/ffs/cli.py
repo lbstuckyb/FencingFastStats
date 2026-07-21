@@ -56,8 +56,15 @@ def _scrape_one(
         ranking_items=ranking_items,
     )
     issues = schema.validate_tables(tables)
-    if issues:
-        raise ValueError("validate_tables() found issues: " + "; ".join(issues))
+    # fie.org's own archive occasionally omits a pool/DE participant from a
+    # competition's final ranking (data gap, not a parser bug) — tolerate that
+    # specific issue rather than dropping an otherwise-good competition's data.
+    fatal_issues = [i for i in issues if "bout athlete(s) missing from results" not in i]
+    if fatal_issues:
+        raise ValueError("validate_tables() found issues: " + "; ".join(fatal_issues))
+    for issue in issues:
+        if issue not in fatal_issues:
+            print(f"[{season}-{comp_id}] tolerated: {issue}", file=sys.stderr)
     return tables
 
 

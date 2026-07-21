@@ -131,10 +131,18 @@ def validate_tables(tables: dict[str, pd.DataFrame]) -> list[str]:
         if unknown:
             issues.append(f"bouts: {len(unknown)} athlete_id(s) not present in athletes table")
 
+        # fie.org placeholder for athletes whose profile was later removed: they still
+        # appear in historical bout/tableau records but never in the results/ranking
+        # listing for that competition, so exclude them from the missing-from-results check.
+        deleted_fencer_ids = (
+            set(athletes.loc[athletes["name"] == "Deleted Fencer", "athlete_id"])
+            if "name" in athletes.columns
+            else set()
+        )
         for comp_id, group in bouts.groupby("competition_id"):
             result_ids = set(results.loc[results["competition_id"] == comp_id, "athlete_id"])
             bout_ids = set(group["athlete_a"].dropna()) | set(group["athlete_b"].dropna())
-            missing_from_results = bout_ids - result_ids
+            missing_from_results = bout_ids - result_ids - deleted_fencer_ids
             if missing_from_results:
                 issues.append(
                     f"bouts: competition {comp_id} has {len(missing_from_results)} "
