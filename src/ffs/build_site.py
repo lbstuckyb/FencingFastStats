@@ -62,7 +62,11 @@ def _load_tables() -> dict[str, pd.DataFrame]:
         "competitions", "athletes", "results", "stats_fencer_comp",
         "ratings_history", "h2h",
     ]
-    return {name: pd.read_parquet(CANONICAL_DIR / f"{name}.parquet") for name in names}
+    tables = {name: pd.read_parquet(CANONICAL_DIR / f"{name}.parquet") for name in names}
+    # A few hundred fie.org athlete names carry leading/trailing whitespace,
+    # which otherwise sorts them ahead of everything in the search index.
+    tables["athletes"]["name"] = tables["athletes"]["name"].str.strip()
+    return tables
 
 
 def _athlete_primary_gender(results: pd.DataFrame, competitions: pd.DataFrame) -> pd.Series:
