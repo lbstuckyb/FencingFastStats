@@ -1,23 +1,46 @@
 # Handoff — start of next session
 
-**State: M5 is DONE and committed. M6 is next. Nothing is half-finished.**
+**State: M6 is PARTIAL — all code is written and committed (`b72eb85`), but
+`site/data/` has not been regenerated and nothing has been verified in a
+browser. Resume M6; do not start M7.**
 
 ## Read first
 
-1. `PLAN.md` → `## Progress Log` → the M5 entry (JSON shapes, router/page details,
-   the naming and chart decisions). Don't re-derive any of it.
-2. `src/ffs/build_site.py` module docstring — the `site/data/` layout.
+1. `PLAN.md` → `## Progress Log` → the M6 entry (artifact shapes, the poule
+   row-order reconstruction, the DE round-ordering heuristic, the `h2h_all`
+   design decision). Don't re-derive any of it.
+2. `src/ffs/build_site.py` module docstring — the full `site/data/` layout.
 
-## Where things stand
+## What's done
 
-- `site/` is a working static site: shell + hash router + three pages
-  (Home, Fencer search, Fencer profile with the ELO rating-timeline chart).
-- `pytest`: 69/69 green.
-- `site/data/` is **gitignored** — regenerate locally with `.venv/bin/ffs build-site`
-  (~6.5 min) if it isn't there. A rebuild was launched at the end of the last
-  session to pick up the athlete-name-strip fix in `_load_tables()`; if the
-  search index still shows names with a leading space, just re-run it.
-- Serve with `python -m http.server -d site` (the venv's python: `.venv/bin/python`).
+- `build_site.py` emits `competitions/index.json`, `competitions/{id}.json`,
+  `h2h/{lo}-{hi}.json` (pairs with >=5 meetings), and `h2h_all` inside every
+  fencer shard.
+- Four new views (`competitions`, `competition`, `h2h`, `methodology`), router
+  + nav + cross-links + CSS.
+- `.github/workflows/pages.yml` (builds `site/data` in CI, no scraping).
+- `pytest`: 77/77 green.
+
+## What's left (finish M6 in this order)
+
+1. **Regenerate `site/data/`**: `.venv/bin/ffs build-site` (~15 min now — it
+   writes ~3.1k competition files and ~2.2k pair files on top of the 17k
+   shards). The last run died partway on a `pd.NA` city — that bug is fixed
+   (`_write_json` `default=`) and covered by a test, but the run was never
+   repeated, so **the current `site/data/` on disk is stale/incomplete**.
+   `site/data/` is gitignored; nothing about it gets committed.
+2. Check the printed size report: no *eager* file over 1.5 MB.
+   `competitions/index.json` measured ~548 KB when built standalone.
+3. Local click-through of the four new routes plus the three old ones:
+   `#/competitions`, `#/competition/2025-242` (215 entries, 29 poules, rounds
+   A256→B2 — the best detail-page test case), `#/h2h?a=34385&b=30081` (the
+   2025 world final pair), `#/methodology`. Serve with
+   `python -m http.server -d site` and verify per the headless-Chrome recipe
+   below: zero console errors, no horizontal page scroll at 375px, light+dark.
+4. Visual polish pass, then update `PLAN.md`'s M6 entry (tick the box) and
+   commit `feat: complete site + GitHub Pages workflow`.
+
+Enabling Pages + pushing needs the user's go-ahead — ask, don't push.
 
 ## Verifying the site without a browser extension
 
@@ -34,18 +57,5 @@ For measurements and console errors, drop a temporary `site/_debug.html` that
 loads `index.html` in an iframe, walks the routes via `location.hash`, and
 prints results into a `<pre>` that `--dump-dom` picks up (delete it afterwards —
 it must not be committed).
-
-## Next milestone — M6 (remaining pages + deploy)
-
-Per `PLAN.md`: H2H explorer, competition browser + detail (poule grids, DE
-bracket), methodology page, visual polish, `.github/workflows/pages.yml`.
-
-Two things M5 deliberately left for M6:
-
-- `build_site.py` does **not** yet emit `competitions/index.json`,
-  `competitions/{id}.json`, or the `h2h/{lo}-{hi}.json` pair files — the
-  competition and H2H pages need those built first.
-- The Pages workflow must run `ffs build-site` as a CI step before
-  `upload-pages-artifact` (93 MB of generated JSON is never committed).
 
 ⛔ Reminder: one milestone per session — stop at M6's commit.
