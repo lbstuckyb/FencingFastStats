@@ -7,6 +7,7 @@ import pandas as pd
 
 from ffs import __version__
 from ffs import devalue, elo, h2h, schema, stats
+from ffs.build_site import EAGER_SIZE_WARN_BYTES, build_site
 from ffs.discover import list_competitions
 from ffs.fie_client import FieClient
 from ffs.parse import parse_competition
@@ -244,6 +245,21 @@ def cmd_build_stats(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_build_site(args: argparse.Namespace) -> int:
+    report = build_site()
+    total = 0
+    print("site/data size report:")
+    for path, size in report.items():
+        total += size
+        # per-shard aggregates ("fencers/{shard}/*.json (N files)") are lazy,
+        # not eager -- the guardrail only applies to single eagerly-fetched files
+        is_aggregate = "(" in path
+        flag = "  [!] >1.5MB eager file" if size > EAGER_SIZE_WARN_BYTES and not is_aggregate else ""
+        print(f"  {path:45s} {size / 1024:8.1f} KB{flag}")
+    print(f"  {'TOTAL':45s} {total / 1024:8.1f} KB")
+    return 0
+
+
 def cmd_validate(args: argparse.Namespace) -> int:
     comp_path = CANONICAL_DIR / "competitions.parquet"
     if not comp_path.exists():
@@ -325,6 +341,9 @@ def main() -> None:
 
     build_stats_parser = subparsers.add_parser("build-stats", help="Build stats/ELO/H2H tables from canonical parquet")
     build_stats_parser.set_defaults(func=cmd_build_stats)
+
+    build_site_parser = subparsers.add_parser("build-site", help="Build site/data/*.json artifacts from canonical parquet")
+    build_site_parser.set_defaults(func=cmd_build_site)
 
     args = parser.parse_args()
     if args.command is None:

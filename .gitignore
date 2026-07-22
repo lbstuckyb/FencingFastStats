@@ -7,4 +7,10 @@ dist/
 
 data/raw_cache/
 
+# ~93 MB of generated JSON (mostly 17k per-fencer shards) -- well over the
+# ~50 MB precedent used for data/canonical/. `ffs build-site` regenerates it
+# from canonical parquet in seconds-to-minutes; M6's Pages workflow should
+# run it as a build step rather than committing the output.
+site/data/
+
 .DS_Store
