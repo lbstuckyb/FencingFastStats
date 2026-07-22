@@ -72,6 +72,40 @@ def tables():
     }
 
 
+@pytest.fixture
+def bouts():
+    """2024-1: one three-fencer poule whose fie.org row order is [2, 3, 1]
+    (so `bout_order`, the row position of the *larger* id in each pair, is 1
+    for fencer 2 and 2 for fencer 3, leaving position 3 for fencer 1), plus a
+    two-round tableau deliberately listed out of order."""
+    return pd.DataFrame([
+        {"competition_id": "2024-1", "phase": "de", "round": "B2", "poule_no": None, "bout_order": 0,
+         "athlete_a": 1, "athlete_b": 2, "score_a": 15, "score_b": 12, "winner": 1, "status": "ok"},
+        {"competition_id": "2024-1", "phase": "poule", "round": "poule", "poule_no": 1, "bout_order": 1,
+         "athlete_a": 1, "athlete_b": 2, "score_a": 5, "score_b": 3, "winner": 1, "status": "ok"},
+        {"competition_id": "2024-1", "phase": "poule", "round": "poule", "poule_no": 1, "bout_order": 2,
+         "athlete_a": 1, "athlete_b": 3, "score_a": 2, "score_b": 5, "winner": 3, "status": "ok"},
+        {"competition_id": "2024-1", "phase": "poule", "round": "poule", "poule_no": 1, "bout_order": 2,
+         "athlete_a": 2, "athlete_b": 3, "score_a": 0, "score_b": 0, "winner": 2, "status": "forfeit"},
+        {"competition_id": "2024-1", "phase": "de", "round": "A4", "poule_no": None, "bout_order": 0,
+         "athlete_a": 1, "athlete_b": None, "score_a": None, "score_b": None, "winner": 1, "status": "bye"},
+        {"competition_id": "2024-1", "phase": "de", "round": "A4", "poule_no": None, "bout_order": 1,
+         "athlete_a": 2, "athlete_b": 3, "score_a": 15, "score_b": 9, "winner": 2, "status": "ok"},
+    ])
+
+
+@pytest.fixture
+def h2h_bouts():
+    return pd.DataFrame([
+        {"competition_id": "2024-1", "weapon": "E", "gender": "M", "phase": "poule", "round": "poule",
+         "start_date": "2024-03-01", "athlete_lo": 1, "athlete_hi": 2, "score_lo": 5, "score_hi": 3,
+         "winner": 1, "status": "ok"},
+        {"competition_id": "2024-2", "weapon": "E", "gender": "M", "phase": "de", "round": "B2",
+         "start_date": "2024-05-01", "athlete_lo": 1, "athlete_hi": 2, "score_lo": 12, "score_hi": 15,
+         "winner": 2, "status": "ok"},
+    ])
+
+
 def test_build_meta_counts_the_canonical_tables(tables):
     meta = build_site.build_meta(tables, bouts_count=987)
 
@@ -197,3 +231,120 @@ def test_fencer_profile_missing_optional_fields_are_null(tables):
 
     assert profile["hand"] is None
     assert profile["birth_year"] == 1995
+
+
+def test_h2h_all_lists_every_meeting_but_only_profiled_opponents(tables):
+    primary_gender = build_site._athlete_primary_gender(tables["results"], tables["competitions"])
+
+    # Athlete 3 has no shard, so the (1, 3) meeting is dropped from the list --
+    # the explorer can only pick opponents that have a profile.
+    pruned = build_site.build_fencer_profile(
+        1, build_site.ProfileContext(tables, primary_gender, shard_ids={1, 2})
+    )
+    assert pruned["h2h_all"] == [[2, "E", 5, 3, "2024-05-01"]]
+
+    # Unpruned, the single meeting with athlete 3 is there: `h2h_all` is not
+    # subject to the >=3 bout floor that `top_rivals` applies.
+    everyone = build_site.build_fencer_profile(
+        1, build_site.ProfileContext(tables, primary_gender)
+    )
+    assert [row[0] for row in everyone["h2h_all"]] == [2, 3]
+    assert everyone["h2h_all"][1] == [3, "E", 1, 1, "2024-03-01"]
+
+
+# ---------------------------------------------------------------- competitions
+
+def test_round_sort_key_orders_a_tableau_before_the_b_tableau():
+    codes = ["B2", "A64", "B64", "A256", "B32", "A128"]
+
+    assert sorted(codes, key=build_site._round_sort_key) == [
+        "A256", "A128", "A64", "B64", "B32", "B2"
+    ]
+    # Older conventions: `pre*` counts down, `PD*` and bare numbers are their
+    # own scheme, and every preliminary code still sorts before the main draw.
+    assert sorted(["A16", "pre4", "pre8"], key=build_site._round_sort_key) == ["pre8", "pre4", "A16"]
+    assert sorted(["PD2", "PD1"], key=build_site._round_sort_key) == ["PD1", "PD2"]
+    assert sorted(["1", "6", "3"], key=build_site._round_sort_key) == ["6", "3", "1"]
+
+
+def test_poule_roster_recovers_fie_row_order(bouts):
+    poule = bouts[bouts["phase"] == "poule"]
+
+    # Positions come from `bout_order` (the row of the larger id in each pair);
+    # fencer 1, the lowest id, is placed in the one row left over.
+    assert build_site._poule_roster(poule) == [2, 3, 1]
+
+
+def test_competitions_index_is_newest_first_with_the_champion(tables):
+    index = build_site.build_competitions_index(tables)
+
+    assert [c["id"] for c in index] == ["2024-2", "2024-1", "2024-4", "2023-3"]
+    first = index[0]
+    assert (first["n"], first["ci"], first["w"], first["g"], first["e"]) == (
+        "Grand Prix", "Doha", "E", "M", 150
+    )
+    assert first["c"] == [2, "BETA Bob"]
+    # No fencer finished first in 2024-4's recorded results.
+    assert next(c for c in index if c["id"] == "2024-4")["c"] is None
+
+
+def test_competition_detail_grids_poules_and_orders_the_tableau(tables, bouts):
+    ctx = build_site.CompetitionContext(tables, bouts)
+
+    detail = build_site.build_competition_detail("2024-1", ctx)
+
+    assert detail["name"] == "Coupe du Monde"
+    assert detail["n_entries"] == 200
+    assert detail["athletes"]["1"] == ["ALPHA Ann", "FRA"]
+    assert [r["a"] for r in detail["results"]] == [1, 2]
+    assert detail["results"][0] == {"a": 1, "r": 1, "s": 3, "p": 32.0}
+
+    poule = detail["poules"][0]
+    assert poule["no"] == 1
+    assert poule["fencers"] == [2, 3, 1]
+    # Bouts reference roster *positions*, not athlete ids: fencer 1 (slot 2)
+    # beat fencer 2 (slot 0) 5-3, and the 0-0 no-show keeps its winner.
+    assert [2, 0, 5, 3, "ok", 2] in poule["bouts"]
+    assert [0, 1, 0, 0, "forfeit", 0] in poule["bouts"]
+
+    # A-tableau before B-tableau, byes kept with a null opponent.
+    assert [r["round"] for r in detail["de"]] == ["A4", "B2"]
+    assert detail["de"][0]["bouts"][0] == [1, None, None, None, 1, "bye"]
+    assert detail["de"][1]["bouts"] == [[1, 2, 15, 12, 1, "ok"]]
+
+
+def test_competition_detail_of_a_results_only_competition(tables, bouts):
+    ctx = build_site.CompetitionContext(tables, bouts)
+
+    detail = build_site.build_competition_detail("2023-3", ctx)
+
+    # No bouts in the archive for this one -- empty sections, not an error.
+    assert detail["poules"] == [] and detail["de"] == []
+    assert detail["results"] == []
+
+
+# ------------------------------------------------------------------------ h2h
+
+def test_h2h_pair_file_is_oriented_on_the_lower_athlete_id(tables, h2h_bouts):
+    athletes_idx = tables["athletes"].set_index("athlete_id")
+    competitions_idx = tables["competitions"].set_index("competition_id")
+
+    pair = build_site.build_h2h_pair(tables["h2h"].iloc[:1], h2h_bouts, athletes_idx, competitions_idx)
+
+    assert pair["a"] == {"id": 1, "name": "ALPHA Ann", "country": "FRA"}
+    assert pair["b"]["id"] == 2
+    assert pair["totals"] == {"bouts": 5, "wins_a": 3, "wins_b": 2, "last_met": "2024-05-01"}
+    assert pair["pools"][0]["weapon"] == "E" and pair["pools"][0]["td_a"] == 60
+    # Bouts are newest first and carry the competition's name for the link.
+    assert [b["date"] for b in pair["bouts"]] == ["2024-05-01", "2024-03-01"]
+    assert pair["bouts"][0]["competition"] == "Grand Prix"
+    assert (pair["bouts"][0]["score_a"], pair["bouts"][0]["score_b"]) == (12, 15)
+
+
+def test_write_json_turns_missing_nullable_values_into_null(tmp_path):
+    path = tmp_path / "out.json"
+
+    size = build_site._write_json(path, {"city": pd.NA, "date": pd.NaT, "n": 1})
+
+    assert path.read_text() == '{"city":null,"date":null,"n":1}'
+    assert size == len(path.read_text())

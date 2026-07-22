@@ -1,0 +1,60 @@
+name: Deploy site to GitHub Pages
+
+# `site/data/` is ~130 MB of generated JSON and is gitignored, so the site is
+# assembled here: `ffs build-site` regenerates it from the committed canonical
+# parquet tables (data/canonical/, ~17 MB) before the artifact is uploaded.
+# No scraping happens in CI — fie.org is never hit by this workflow.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "site/**"
+      - "src/ffs/**"
+      - "data/canonical/**"
+      - "pyproject.toml"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it mid-publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install ffs
+        run: pip install -e .
+
+      - name: Build site data
+        run: ffs build-site
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

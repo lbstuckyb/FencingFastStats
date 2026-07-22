@@ -176,7 +176,7 @@ function resultsCard(f) {
     el("tr", {}, [
       el("td", { class: "small", text: seasonOf(r.date) }),
       el("td", {}, [
-        el("div", { text: r.name || r.competition_id }),
+        el("a", { href: `#/competition/${r.competition_id}`, text: r.name || r.competition_id }),
         el("div", { class: "small muted", text: [r.city, r.country].filter(Boolean).join(", ") || "—" }),
       ]),
       el("td", { class: "small", text: fmtDate(r.date) }),
@@ -218,6 +218,9 @@ function rivalsCard(f) {
       el("td", { class: "num", text: fmtInt(r.bouts) }),
       el("td", { class: "num", text: `${fmtInt(r.wins)}–${fmtInt(r.losses)}` }),
       el("td", { class: "small", text: fmtDate(r.last_met) }),
+      el("td", { class: "small" }, [
+        el("a", { href: `#/h2h?a=${f.id}&b=${r.id}`, text: "Compare" }),
+      ]),
     ])
   );
 
@@ -233,6 +236,7 @@ function rivalsCard(f) {
             el("th", { class: "num", text: "Bouts" }),
             el("th", { class: "num", text: "W–L" }),
             el("th", { text: "Last met" }),
+            el("th", { text: "" }),
           ]),
         ]),
         el("tbody", {}, rows),

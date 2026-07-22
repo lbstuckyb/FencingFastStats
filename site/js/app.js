@@ -1,6 +1,7 @@
 // Entry point: theme toggle, hash router, footer meta.
 //
-// Routes:  #/  ·  #/search?q=…&pool=…  ·  #/fencer/{id}
+// Routes:  #/  ·  #/search?q=…&pool=…  ·  #/fencer/{id}  ·  #/h2h?a=…&b=…
+//          #/competitions?pool=…&season=…  ·  #/competition/{id}  ·  #/methodology
 // Views are lazily imported so a cold visit to a fencer profile doesn't parse
 // the home page's code (and vice versa).
 
@@ -58,6 +59,18 @@ async function route() {
     } else if (parts[0] === "fencer" && parts[1]) {
       setActiveNav("search");
       view = await import("./views/fencer.js");
+    } else if (parts[0] === "h2h") {
+      setActiveNav("h2h");
+      view = await import("./views/h2h.js");
+    } else if (parts[0] === "competitions") {
+      setActiveNav("competitions");
+      view = await import("./views/competitions.js");
+    } else if (parts[0] === "competition" && parts[1]) {
+      setActiveNav("competitions");
+      view = await import("./views/competition.js");
+    } else if (parts[0] === "methodology") {
+      setActiveNav("methodology");
+      view = await import("./views/methodology.js");
     } else {
       setActiveNav(null);
       main.replaceChildren(notFound());

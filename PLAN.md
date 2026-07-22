@@ -220,5 +220,30 @@ Home (pool selector, ELO top-20, recent comps, leaderboards) · Fencer search (c
     - Also fixed in `build_site.py`: `_load_tables()` now strips athlete names (236 fie.org names carry leading whitespace and sorted ahead of everything in the search index). Local `site/data/` was being regenerated with this fix at session end — **re-run `ffs build-site` if unsure**; nothing is committed either way.
     - Verified with headless Chrome against `python -m http.server -d site` (no browser extension in this session): all 7 routes render, **zero console errors/rejections**, desktop + 390px mobile screenshots checked in light and dark, `documentElement.scrollWidth == viewport` at 375px (wide tables scroll inside `.table-scroll`, not the page). Eager files: `index.json` 1.03 MB, `meta.json` 4 KB, summaries 24 KB each — all under the 1.5 MB guardrail; `echarts.min.js` (1 MB) is lazy so it doesn't count.
     - `tests/test_build_site.py` added (9 tests: meta counts, index pruning/multi-weapon, the name-strip fix, pool scoping + empty pool, profile career/results/timeline, h2h perspective flip, null fields). `pytest`: **69/69 green**.
-- [ ] M6 — Remaining pages + deploy
+- [ ] M6 — Remaining pages + deploy **(partial — code complete, verification not done)**
+  - `build_site.py` now emits the three artifact families M5 deferred: `competitions/index.json`
+    (short-key rows, ~548 KB), `competitions/{competition_id}.json` (ranking + poule grids + DE
+    rounds), and `h2h/{lo}-{hi}.json` for pairs with **>=5** meetings (~2.2k files).
+  - **Design decision (deviation):** a pair file per pair would be 413k files, so each fencer shard
+    also gained `h2h_all` — a compact `[opponent_id, weapon, bouts, wins, last_met]` row for *every*
+    opponent that has a profile. The H2H explorer therefore answers "have these two ever met?"
+    exactly for any indexed pair, and only fetches a pair file for the bout-by-bout list.
+  - Poule grids reconstruct fie.org's own row order from `bout_order` (= the row position of the
+    larger id in each pair, so every fencer but the lowest-id one is placed directly and that one
+    takes the leftover slot). Verified over a 60-competition sample: 1059/1068 poules resolve
+    exactly, 9 have 2 unplaced fencers and 11 have a duplicate/out-of-range position (archive
+    gaps) — those fall back to id order, so the grid is still complete.
+  - DE round ordering is a documented best-effort (`_ROUND_PREFIXES`): fie.org runs a preliminary
+    "A" tableau into the main "B" one (`A256 → A64`, then `B64 → B2` = the final), with older
+    seasons also using `F*`, `pre*`, `PD*` and bare round numbers.
+  - New views: `competitions.js` (browser: search + season select + pool chips), `competition.js`
+    (podium, ranking, poule grids, scrolling bracket), `h2h.js` (two pickers, record card, bout
+    list), `methodology.js` (reader-facing summary of `docs/methodology.md`). Router, nav,
+    cross-links (home/profile → competition, rivals → H2H) and CSS updated.
+  - `.github/workflows/pages.yml` added: builds `site/data/` with `ffs build-site` from the
+    committed canonical parquet (no scraping in CI) before `upload-pages-artifact`.
+  - `pytest`: **76/76 green** (69 + 7 new build_site tests).
+  - **Not done — next session:** regenerate `site/data/` (`ffs build-site`, the run was cut short),
+    then the full local click-through / headless-Chrome verification of the four new routes, the
+    size report, and visual polish. Nothing else is half-finished.
 - [ ] M7 — Proposal + backlog docs

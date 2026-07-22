@@ -20,6 +20,16 @@ export const getMeta = () => getJSON("data/meta.json");
 export const getFencerIndex = () => getJSON("data/fencers/index.json");
 export const getSummary = (pool) => getJSON(`data/summary/${pool}.json`);
 export const getFencer = (id) => getJSON(`data/fencers/${Number(id) % 100}/${Number(id)}.json`);
+export const getCompetitionsIndex = () => getJSON("data/competitions/index.json");
+export const getCompetition = (id) => getJSON(`data/competitions/${id}.json`);
+
+// Pair files exist only for >=5 meetings (see build_site.py); `null` means
+// "no bout-by-bout detail", not "never met" — the aggregate comes from the
+// fencer shards' `h2h_all`.
+export const getH2HPair = (a, b) => {
+  const [lo, hi] = [Number(a), Number(b)].sort((x, y) => x - y);
+  return getJSON(`data/h2h/${lo}-${hi}.json`).catch(() => null);
+};
 
 // ---- pools -----------------------------------------------------------------
 // Pool codes are {weapon}{gender}, e.g. "ef" = Epee / Female (see build_site.py).
@@ -41,3 +51,27 @@ export const poolLabel = (code) => POOLS.find((p) => p.code === code)?.label ?? 
 const WEAPON_NAMES = { E: "Épée", F: "Foil", S: "Sabre" };
 export const weaponName = (w) => WEAPON_NAMES[w] ?? w ?? "—";
 export const genderName = (g) => (g === "F" ? "Women" : g === "M" ? "Men" : "—");
+export const poolCodeOf = (weapon, gender) =>
+  `${(weapon ?? "").toLowerCase()}${(gender ?? "").toLowerCase()}`;
+
+// fie.org's own competition level codes. Anything unrecognised is shown as-is
+// rather than hidden — the archive's older seasons use a long tail of them.
+const LEVEL_NAMES = {
+  CDM: "World Cup", CM: "World Championships", CHM: "World Championships",
+  GP: "Grand Prix", JO: "Olympic Games", CHE: "European Championships",
+  CE: "European Championships", CHZ: "Zonal Championships", CZ: "Zonal Championships",
+  SAT: "Satellite", CHA: "Asian Championships", CHP: "Pan-American Championships",
+  CHAF: "African Championships", CHO: "Oceania Championships", Q: "Qualifier",
+};
+export const levelName = (code) => LEVEL_NAMES[code] ?? code ?? "—";
+
+// DE round codes as fie.org records them (see build_site._ROUND_PREFIXES).
+// A competition can run a preliminary "A" tableau into the main "B" one, so
+// "table of 64" is not unique within an event — Final/Semi-final naming is
+// left to the caller, which knows where a round sits in the ordered list.
+export function roundLabel(code) {
+  const match = /^([A-Za-z]*)(\d+)$/.exec(code ?? "");
+  if (!match) return code ?? "—";
+  const [, prefix, digits] = match;
+  return prefix ? `Table of ${digits}` : `Round ${digits}`;
+}

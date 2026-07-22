@@ -15,20 +15,35 @@ Output layout (all paths relative to `site/data/`):
   gender always `m/f`, so all 6 codes are unambiguous two-letter pairs.
 - `fencers/{id % 100}/{id}.json` — full profile: career summary per weapon,
   every competition result + stats row, rating timeline (for the profile's
-  rating chart), and a top-10 rivals list (>=3 head-to-head bouts).
+  rating chart), a top-10 rivals list (>=3 head-to-head bouts), and `h2h_all`:
+  a compact `[opponent_id, weapon, bouts, wins, last_met]` row for *every*
+  opponent this fencer has ever met (see below).
+- `competitions/index.json` — the competition browser's list: one short-key
+  row per competition (id, name, city, country, date, weapon, gender, level,
+  entries, champion).
+- `competitions/{competition_id}.json` — competition detail: final ranking,
+  one entry per poule (fencer roster in fie.org's own row order plus the
+  bout grid) and the DE bouts grouped by round, oldest round first.
+- `h2h/{lo}-{hi}.json` — head-to-head detail for pairs with **>=5** bouts
+  (`lo`/`hi` = the two athlete ids sorted ascending, matching `h2h.parquet`'s
+  canonical pair key): per-pool aggregates plus the bout-by-bout list.
 
 Per the plan's size guardrail ("prune per-fencer shards to athletes with
 >=2 comps"), athletes with exactly one competition result get no shard —
 and are excluded from the search index too, so search never links to a
 missing profile.
 
-Competition browser/detail artifacts (`competitions/index.json`,
-`competitions/{id}.json`, poule grids, DE brackets) are explicitly M6 scope
-per `PLAN.md` and are not built here.
+The H2H explorer has to answer "have these two ever met?" for *any* pair of
+indexed fencers, but a pair file per pair would be 413k files for what is
+usually a single bout. Hence the split: every meeting is in the (compact,
+~28 bytes/row) `h2h_all` list of both fencers' shards, which the explorer
+already loads for the names; the pair files add the bout-by-bout detail only
+where there's a real rivalry to show.
 """
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter
 from pathlib import Path
 
@@ -42,6 +57,7 @@ GENDERS = ["M", "F"]
 
 MIN_COMPS_FOR_SHARD = 2
 MIN_H2H_BOUTS_FOR_SUMMARY = 3
+MIN_H2H_BOUTS_FOR_PAIR_FILE = 5
 TOP_N_ELO = 200
 TOP_N_LEADERBOARD = 50
 RECENT_N_COMPS = 20
@@ -50,9 +66,18 @@ TOP_N_RIVALS = 10
 EAGER_SIZE_WARN_BYTES = 1_500_000
 
 
+def _json_default(obj):
+    """Values read straight off a nullable-dtype column arrive as `pd.NA` /
+    `pd.NaT` rather than `None` (e.g. a competition with no recorded city).
+    Every builder would otherwise need a `pd.notna` guard per field."""
+    if obj is pd.NA or obj is pd.NaT:
+        return None
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+
 def _write_json(path: Path, obj) -> int:
     path.parent.mkdir(parents=True, exist_ok=True)
-    text = json.dumps(obj, separators=(",", ":"))
+    text = json.dumps(obj, separators=(",", ":"), default=_json_default)
     path.write_text(text)
     return len(text.encode("utf-8"))
 
@@ -208,7 +233,7 @@ STATS_PROFILE_COLS = [
 ]
 
 
-def _group_dict(df: pd.DataFrame, key: str) -> dict:
+def _group_dict(df: pd.DataFrame, key) -> dict:
     """One pass of `groupby` turned into a dict for O(1) per-athlete lookup
     (the naive per-athlete boolean-mask filter over full-size tables is
     O(n_athletes * n_rows) and takes tens of minutes over the full dataset;
@@ -229,7 +254,16 @@ class ProfileContext:
     """Pre-grouped lookups so `build_fencer_profile` never re-scans a
     full-size table -- built once in `build_site()`, reused per athlete."""
 
-    def __init__(self, tables: dict[str, pd.DataFrame], primary_gender_by_athlete: pd.Series):
+    def __init__(
+        self,
+        tables: dict[str, pd.DataFrame],
+        primary_gender_by_athlete: pd.Series,
+        shard_ids: set[int] | None = None,
+    ):
+        # `h2h_all` only lists opponents who have a profile of their own --
+        # the explorer picks both fencers out of the search index, so rows for
+        # unindexed opponents would be dead weight in every shard.
+        self.shard_ids = shard_ids
         self.athletes_idx = tables["athletes"].set_index("athlete_id")
         self.competitions_idx = tables["competitions"].set_index("competition_id")
         self.results_by_athlete = _group_dict(tables["results"], "athlete_id")
@@ -314,7 +348,14 @@ def build_fencer_profile(athlete_id: int, ctx: ProfileContext) -> dict:
     # athlete's own perspective courtesy of `_h2h_by_athlete`) ---
     mine = ctx.h2h_by_athlete.get(athlete_id)
     rivals = []
+    h2h_all = []
     if mine is not None:
+        listed = mine if ctx.shard_ids is None else mine[mine["opponent_id"].isin(ctx.shard_ids)]
+        h2h_all = [
+            [int(r.opponent_id), r.weapon, int(r.bouts), int(r.wins), r.last_met]
+            for r in listed.sort_values("opponent_id").itertuples(index=False)
+        ]
+
         mine = mine[mine["bouts"] >= MIN_H2H_BOUTS_FOR_SUMMARY]
         mine = mine.sort_values("bouts", ascending=False).head(TOP_N_RIVALS)
         for r in mine.itertuples(index=False):
@@ -341,6 +382,258 @@ def build_fencer_profile(athlete_id: int, ctx: ProfileContext) -> dict:
         "results": results_out,
         "rating_timeline": timeline,
         "top_rivals": rivals,
+        # [opponent_id, weapon, bouts, wins, last_met] -- every opponent, for
+        # the H2H explorer. Gender is the fencer's own pool (see `_h2h_by_athlete`).
+        "h2h_all": h2h_all,
+    }
+
+
+# ---------------------------------------------------------------- competitions
+
+# Round codes come straight from fie.org's tableau payloads and are not one
+# scheme: the modern one runs a preliminary "A" tableau (A256 -> A64) into the
+# main "B" tableau (B64 -> B2, the final), while older seasons also use `F*`,
+# `pre*`, `PD*` and bare round numbers. Ordering is therefore a best-effort
+# interpretation: {prefix: (stage rank, +1 if the number counts up through the
+# event, -1 if it counts down)}.
+_ROUND_PREFIXES: dict[str, tuple[int, int]] = {
+    "pre": (0, -1), "PD": (0, +1), "A": (1, -1), "F": (2, -1), "": (3, -1), "B": (4, -1),
+}
+
+
+def _round_sort_key(code: str) -> tuple:
+    match = re.fullmatch(r"([A-Za-z]*)(\d*)", code or "")
+    prefix, digits = match.groups() if match else ("?", "")
+    rank, direction = _ROUND_PREFIXES.get(prefix, (3, -1))
+    return (rank, direction * (int(digits) if digits else 0), code or "")
+
+
+def _poule_roster(group: pd.DataFrame) -> list[int]:
+    """fie.org's own row order for one poule, recovered from `bout_order`.
+
+    `bout_order` on a poule bout is the row position of `athlete_b`, which is
+    always the *larger* of the pair's two ids -- so every fencer but the
+    lowest-id one is placed directly, and that one takes the position left
+    over. Fencers whose position can't be recovered (archive gaps where their
+    bouts are missing entirely) are appended by id, so the grid is still
+    complete even when the order isn't authentic.
+    """
+    positions: dict[int, int] = {}
+    for row in group.itertuples(index=False):
+        if pd.notna(row.athlete_b) and pd.notna(row.bout_order):
+            positions[int(row.athlete_b)] = int(row.bout_order)
+
+    members = {int(a) for a in group["athlete_a"].dropna()} | {int(b) for b in group["athlete_b"].dropna()}
+    unplaced = sorted(members - set(positions))
+    free = [p for p in range(1, len(members) + 1) if p not in set(positions.values())]
+    for athlete_id, position in zip(unplaced, free):
+        positions[athlete_id] = position
+
+    return sorted(members, key=lambda a: (positions.get(a, 10**6), a))
+
+
+class CompetitionContext:
+    """Pre-grouped per-competition lookups, same motivation as `ProfileContext`."""
+
+    def __init__(self, tables: dict[str, pd.DataFrame], bouts: pd.DataFrame):
+        self.competitions_idx = tables["competitions"].set_index("competition_id")
+        self.athletes_idx = tables["athletes"].set_index("athlete_id")
+        self.results_by_comp = _group_dict(tables["results"], "competition_id")
+        self.bouts_by_comp = _group_dict(bouts, "competition_id")
+        self.empty_results = tables["results"].iloc[0:0]
+        self.empty_bouts = bouts.iloc[0:0]
+
+
+def build_competitions_index(tables: dict[str, pd.DataFrame]) -> list[dict]:
+    """One short-key row per competition, newest first, for the browser page:
+    `id/n(ame)/ci(ty)/co(untry)/d(ate)/w(eapon)/g(ender)/l(evel)/e(ntries)`
+    plus `c` = `[champion_id, champion_name]`."""
+    competitions = tables["competitions"].sort_values("start_date", ascending=False)
+    athletes = tables["athletes"].set_index("athlete_id")
+    results = tables["results"]
+
+    champions = results[results["final_rank"] == 1]
+    champ_by_comp = dict(zip(champions["competition_id"], champions["athlete_id"]))
+
+    rows = []
+    for r in competitions.itertuples(index=False):
+        champ_id = champ_by_comp.get(r.competition_id)
+        champion = None
+        if champ_id is not None and pd.notna(champ_id):
+            name = athletes.at[champ_id, "name"] if champ_id in athletes.index else None
+            champion = [int(champ_id), name]
+        rows.append({
+            "id": r.competition_id,
+            "n": r.name,
+            "ci": r.city,
+            "co": r.country,
+            "d": r.start_date,
+            "w": r.weapon,
+            "g": r.gender,
+            "l": r.level,
+            "e": int(r.n_entries) if pd.notna(r.n_entries) else None,
+            "c": champion,
+        })
+    return rows
+
+
+def build_competition_detail(competition_id: str, ctx: CompetitionContext) -> dict:
+    comp = ctx.competitions_idx.loc[competition_id]
+    results = ctx.results_by_comp.get(competition_id, ctx.empty_results).sort_values("final_rank")
+    bouts = ctx.bouts_by_comp.get(competition_id, ctx.empty_bouts)
+
+    athlete_ids = {int(a) for a in results["athlete_id"].dropna()}
+    if not bouts.empty:
+        athlete_ids |= {int(a) for a in bouts["athlete_a"].dropna()}
+        athlete_ids |= {int(b) for b in bouts["athlete_b"].dropna()}
+
+    athletes = {}
+    for athlete_id in sorted(athlete_ids):
+        if athlete_id in ctx.athletes_idx.index:
+            row = ctx.athletes_idx.loc[athlete_id]
+            athletes[str(athlete_id)] = [row["name"], row["country"]]
+        else:
+            athletes[str(athlete_id)] = [None, None]
+
+    ranking = [
+        {
+            "a": int(r.athlete_id),
+            "r": int(r.final_rank) if pd.notna(r.final_rank) else None,
+            "s": int(r.seed) if pd.notna(r.seed) else None,
+            "p": round(float(r.points), 2) if pd.notna(r.points) else None,
+        }
+        for r in results.itertuples(index=False)
+    ]
+
+    poules = []
+    poule_bouts = bouts[bouts["phase"] == "poule"] if not bouts.empty else bouts
+    if not poule_bouts.empty:
+        for poule_no, group in poule_bouts.groupby("poule_no"):
+            roster = _poule_roster(group)
+            slot = {athlete_id: i for i, athlete_id in enumerate(roster)}
+            # [row_a, row_b, score_a, score_b, status, winner_row] -- all
+            # positions are indices into `fencers`, so the grid renders without
+            # a lookup, and the winner is explicit (a forfeit has a winner but
+            # no meaningful score).
+            grid = [
+                [
+                    slot[int(r.athlete_a)], slot[int(r.athlete_b)],
+                    int(r.score_a) if pd.notna(r.score_a) else None,
+                    int(r.score_b) if pd.notna(r.score_b) else None,
+                    r.status,
+                    slot.get(int(r.winner)) if pd.notna(r.winner) else None,
+                ]
+                for r in group.itertuples(index=False)
+                if pd.notna(r.athlete_a) and pd.notna(r.athlete_b)
+            ]
+            poules.append({"no": int(poule_no), "fencers": roster, "bouts": grid})
+
+    de_rounds = []
+    de_bouts = bouts[bouts["phase"] == "de"] if not bouts.empty else bouts
+    if not de_bouts.empty:
+        for round_code, group in sorted(de_bouts.groupby("round"), key=lambda kv: _round_sort_key(kv[0])):
+            group = group.sort_values("bout_order")
+            de_rounds.append({
+                "round": round_code,
+                "bouts": [
+                    [
+                        int(r.athlete_a) if pd.notna(r.athlete_a) else None,
+                        int(r.athlete_b) if pd.notna(r.athlete_b) else None,
+                        int(r.score_a) if pd.notna(r.score_a) else None,
+                        int(r.score_b) if pd.notna(r.score_b) else None,
+                        int(r.winner) if pd.notna(r.winner) else None,
+                        r.status,
+                    ]
+                    for r in group.itertuples(index=False)
+                ],
+            })
+
+    return {
+        "id": competition_id,
+        "name": comp["name"],
+        "city": comp["city"],
+        "country": comp["country"],
+        "date": comp["start_date"],
+        "season": int(comp["season"]) if pd.notna(comp["season"]) else None,
+        "weapon": comp["weapon"],
+        "gender": comp["gender"],
+        "category": comp["category"],
+        "level": comp["level"],
+        "n_entries": int(comp["n_entries"]) if pd.notna(comp["n_entries"]) else None,
+        "athletes": athletes,
+        "results": ranking,
+        "poules": poules,
+        "de": de_rounds,
+    }
+
+
+# ------------------------------------------------------------------------ h2h
+
+def build_h2h_pair(
+    pair_h2h: pd.DataFrame,
+    pair_bouts: pd.DataFrame,
+    athletes_idx: pd.DataFrame,
+    competitions_idx: pd.DataFrame,
+) -> dict:
+    """Detail file for one pair. `a` is always the lower athlete id (the
+    `athlete_lo` of `h2h.parquet`), so scores need no re-orientation."""
+    lo = int(pair_h2h["athlete_lo"].iloc[0])
+    hi = int(pair_h2h["athlete_hi"].iloc[0])
+
+    def _who(athlete_id: int) -> dict:
+        row = athletes_idx.loc[athlete_id] if athlete_id in athletes_idx.index else None
+        return {
+            "id": athlete_id,
+            "name": None if row is None else row["name"],
+            "country": None if row is None else row["country"],
+        }
+
+    pools = [
+        {
+            "weapon": r.weapon,
+            "gender": r.gender,
+            "bouts": int(r.bouts),
+            "wins_a": int(r.wins_lo),
+            "wins_b": int(r.wins_hi),
+            "td_a": int(r.td_lo) if pd.notna(r.td_lo) else None,
+            "td_b": int(r.td_hi) if pd.notna(r.td_hi) else None,
+            "poule_bouts": int(r.poule_bouts),
+            "de_bouts": int(r.de_bouts),
+            "last_met": r.last_met,
+        }
+        for r in pair_h2h.itertuples(index=False)
+    ]
+
+    pair_bouts = pair_bouts.sort_values("start_date", ascending=False)
+    bouts = [
+        {
+            "competition_id": r.competition_id,
+            "competition": competitions_idx.at[r.competition_id, "name"]
+            if r.competition_id in competitions_idx.index else None,
+            "date": r.start_date,
+            "weapon": r.weapon,
+            "gender": r.gender,
+            "phase": r.phase,
+            "round": r.round,
+            "score_a": int(r.score_lo) if pd.notna(r.score_lo) else None,
+            "score_b": int(r.score_hi) if pd.notna(r.score_hi) else None,
+            "winner": int(r.winner) if pd.notna(r.winner) else None,
+            "status": r.status,
+        }
+        for r in pair_bouts.itertuples(index=False)
+    ]
+
+    return {
+        "a": _who(lo),
+        "b": _who(hi),
+        "totals": {
+            "bouts": sum(p["bouts"] for p in pools),
+            "wins_a": sum(p["wins_a"] for p in pools),
+            "wins_b": sum(p["wins_b"] for p in pools),
+            "last_met": max(p["last_met"] for p in pools if p["last_met"]) if pools else None,
+        },
+        "pools": pools,
+        "bouts": bouts,
     }
 
 
@@ -348,7 +641,8 @@ def build_site() -> dict:
     """Builds all artifacts, writes them under `site/data/`, returns a
     size report dict (path -> bytes) for the caller to print / gate on."""
     tables = _load_tables()
-    bouts_count = int(pd.read_parquet(CANONICAL_DIR / "bouts.parquet", columns=["competition_id"]).shape[0])
+    bouts = pd.read_parquet(CANONICAL_DIR / "bouts.parquet")
+    bouts_count = int(len(bouts))
 
     report: dict[str, int] = {}
 
@@ -365,7 +659,7 @@ def build_site() -> dict:
             report[rel] = _write_json(SITE_DATA_DIR / rel, summary)
 
     primary_gender = _athlete_primary_gender(tables["results"], tables["competitions"])
-    ctx = ProfileContext(tables, primary_gender)
+    ctx = ProfileContext(tables, primary_gender, shard_ids)
     shard_bytes_total = 0
     for athlete_id in shard_ids:
         profile = build_fencer_profile(athlete_id, ctx)
@@ -373,5 +667,45 @@ def build_site() -> dict:
         rel_path = SITE_DATA_DIR / "fencers" / str(shard) / f"{athlete_id}.json"
         shard_bytes_total += _write_json(rel_path, profile)
     report[f"fencers/{{shard}}/*.json ({len(shard_ids)} files)"] = shard_bytes_total
+
+    # --- competitions ---
+    comp_index = build_competitions_index(tables)
+    report["competitions/index.json"] = _write_json(
+        SITE_DATA_DIR / "competitions" / "index.json", comp_index
+    )
+
+    comp_ctx = CompetitionContext(tables, bouts)
+    comp_bytes_total = 0
+    comp_ids = list(tables["competitions"]["competition_id"])
+    for competition_id in comp_ids:
+        detail = build_competition_detail(competition_id, comp_ctx)
+        comp_bytes_total += _write_json(
+            SITE_DATA_DIR / "competitions" / f"{competition_id}.json", detail
+        )
+    report[f"competitions/*.json ({len(comp_ids)} files)"] = comp_bytes_total
+
+    # --- head-to-head pair files (real rivalries only, see module docstring) ---
+    h2h_bouts = pd.read_parquet(CANONICAL_DIR / "h2h_bouts.parquet")
+    h2h = tables["h2h"]
+    pair_bouts = h2h.groupby(["athlete_lo", "athlete_hi"])["bouts"].sum()
+    wanted = {
+        (int(lo), int(hi))
+        for (lo, hi), n in pair_bouts.items()
+        if n >= MIN_H2H_BOUTS_FOR_PAIR_FILE and int(lo) in shard_ids and int(hi) in shard_ids
+    }
+    athletes_idx = tables["athletes"].set_index("athlete_id")
+    competitions_idx = tables["competitions"].set_index("competition_id")
+    h2h_by_pair = _group_dict(h2h, ["athlete_lo", "athlete_hi"])
+    bouts_by_pair = _group_dict(h2h_bouts, ["athlete_lo", "athlete_hi"])
+    pair_bytes_total = 0
+    for pair in sorted(wanted):
+        detail = build_h2h_pair(
+            h2h_by_pair[pair], bouts_by_pair.get(pair, h2h_bouts.iloc[0:0]),
+            athletes_idx, competitions_idx,
+        )
+        pair_bytes_total += _write_json(
+            SITE_DATA_DIR / "h2h" / f"{pair[0]}-{pair[1]}.json", detail
+        )
+    report[f"h2h/*.json ({len(wanted)} files)"] = pair_bytes_total
 
     return report

@@ -84,7 +84,7 @@ function recentCard(summary) {
   const rows = summary.recent_competitions.map((c) =>
     el("tr", {}, [
       el("td", {}, [
-        el("div", { text: c.name || c.id }),
+        el("a", { href: `#/competition/${c.id}`, text: c.name || c.id }),
         el("div", { class: "small muted", text: [c.city, c.country].filter(Boolean).join(", ") || "—" }),
       ]),
       el("td", { class: "small", text: fmtDate(c.date) }),
@@ -95,7 +95,10 @@ function recentCard(summary) {
 
   return el("section", { class: "card" }, [
     el("h2", { text: "Recent competitions" }),
-    el("p", { class: "small muted", text: "Most recent events in this pool, newest first." }),
+    el("p", { class: "small muted" }, [
+      "Most recent events in this pool, newest first. ",
+      el("a", { href: `#/competitions?pool=${summary.weapon.toLowerCase()}${summary.gender.toLowerCase()}`, text: "Browse all →" }),
+    ]),
     el("div", { class: "table-scroll" }, [
       el("table", {}, [
         el("thead", {}, [
