@@ -4,7 +4,10 @@
 import { genderName, getCompetition, levelName, roundLabel, weaponName } from "../data.js";
 import { el, fencerLink, fmtDate, fmtInt, fmtNum } from "../util.js";
 
-const RANKING_PAGE = 64; // shown before the "show all" toggle
+// Shown before the "show all" toggle. Deliberately short: the podium already
+// covers the top four, and a 200-row ranking otherwise buries the poules and
+// the tableau below a screen-and-a-half of scrolling.
+const RANKING_PAGE = 16;
 
 const nameOf = (comp, id) => comp.athletes[String(id)]?.[0] ?? (id == null ? "—" : `#${id}`);
 const countryOf = (comp, id) => comp.athletes[String(id)]?.[1] ?? "";
@@ -20,7 +23,11 @@ function head(comp) {
   return el("div", { class: "page-head" }, [
     el("h1", { text: comp.name || comp.id }),
     el("p", { class: "muted", text: bits.join(" · ") }),
-    el("p", { class: "small muted", text: `${fmtInt(comp.n_entries)} entries · ${comp.poules.length} poules · ${comp.de.length} tableau rounds` }),
+    el("p", { class: "small muted", text: [
+      `${fmtInt(comp.n_entries)} entr${comp.n_entries === 1 ? "y" : "ies"}`,
+      `${comp.poules.length} poule${comp.poules.length === 1 ? "" : "s"}`,
+      `${comp.de.length} tableau round${comp.de.length === 1 ? "" : "s"}`,
+    ].join(" · ") }),
   ]);
 }
 
@@ -68,7 +75,7 @@ function rankingCard(comp) {
       )
     );
     toggle.textContent = expanded
-      ? "Show the top 64 only"
+      ? `Show the top ${RANKING_PAGE} only`
       : `Show all ${fmtInt(comp.results.length)} entries`;
   }
   toggle.addEventListener("click", () => { expanded = !expanded; fill(); });
@@ -236,7 +243,7 @@ function tableauCard(comp) {
       el("div", { class: "bracket-col" }, [
         el("div", { class: "bracket-head" }, [
           el("strong", { text: titles[i] }),
-          el("span", { class: "small muted", text: `${round.round} · ${round.bouts.length} bouts` }),
+          el("span", { class: "small muted", text: `${round.round} · ${round.bouts.length} bout${round.bouts.length === 1 ? "" : "s"}` }),
         ]),
         el("div", { class: "bracket-bouts" }, round.bouts.map((b) => boutCard(comp, b))),
       ])

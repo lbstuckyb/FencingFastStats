@@ -108,7 +108,7 @@ def build_meta(tables: dict[str, pd.DataFrame], bouts_count: int) -> dict:
     competitions = tables["competitions"]
     seasons = competitions["season"].dropna()
     return {
-        "generated_at": pd.Timestamp.utcnow().isoformat(),
+        "generated_at": pd.Timestamp.now("UTC").isoformat(),
         "season_min": int(seasons.min()),
         "season_max": int(seasons.max()),
         "n_competitions": int(len(competitions)),

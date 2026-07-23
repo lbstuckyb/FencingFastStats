@@ -220,7 +220,7 @@ Home (pool selector, ELO top-20, recent comps, leaderboards) · Fencer search (c
     - Also fixed in `build_site.py`: `_load_tables()` now strips athlete names (236 fie.org names carry leading whitespace and sorted ahead of everything in the search index). Local `site/data/` was being regenerated with this fix at session end — **re-run `ffs build-site` if unsure**; nothing is committed either way.
     - Verified with headless Chrome against `python -m http.server -d site` (no browser extension in this session): all 7 routes render, **zero console errors/rejections**, desktop + 390px mobile screenshots checked in light and dark, `documentElement.scrollWidth == viewport` at 375px (wide tables scroll inside `.table-scroll`, not the page). Eager files: `index.json` 1.03 MB, `meta.json` 4 KB, summaries 24 KB each — all under the 1.5 MB guardrail; `echarts.min.js` (1 MB) is lazy so it doesn't count.
     - `tests/test_build_site.py` added (9 tests: meta counts, index pruning/multi-weapon, the name-strip fix, pool scoping + empty pool, profile career/results/timeline, h2h perspective flip, null fields). `pytest`: **69/69 green**.
-- [ ] M6 — Remaining pages + deploy **(partial — code complete, verification not done)**
+- [x] M6 — Remaining pages + deploy
   - `build_site.py` now emits the three artifact families M5 deferred: `competitions/index.json`
     (short-key rows, ~548 KB), `competitions/{competition_id}.json` (ranking + poule grids + DE
     rounds), and `h2h/{lo}-{hi}.json` for pairs with **>=5** meetings (~2.2k files).
@@ -243,7 +243,28 @@ Home (pool selector, ELO top-20, recent comps, leaderboards) · Fencer search (c
   - `.github/workflows/pages.yml` added: builds `site/data/` with `ffs build-site` from the
     committed canonical parquet (no scraping in CI) before `upload-pages-artifact`.
   - `pytest`: **76/76 green** (69 + 7 new build_site tests).
-  - **Not done — next session:** regenerate `site/data/` (`ffs build-site`, the run was cut short),
-    then the full local click-through / headless-Chrome verification of the four new routes, the
-    size report, and visual polish. Nothing else is half-finished.
+  - **2026-07-23 session (M6 closed):** regenerated `site/data/` end-to-end (~20 min; the `pd.NA`
+    city crash from the previous run did not recur) and verified the whole site headlessly.
+    - Size report: **146 MB** total — `fencers/*` 111 MB (17,118 files), `competitions/*` 30 MB
+      (3,092), `h2h/*` 3.1 MB (2,243). Eager files all well under the 1.5 MB guardrail:
+      `fencers/index.json` 1002 KB, `competitions/index.json` **472 KB**, summaries 23 KB, meta 0.2 KB.
+    - Verified 12 routes × light/dark at 375px (the four new ones plus home/pool-switch/search/
+      profile/404, and two edge competitions: `2025-242` = 215 entries/29 poules/9 rounds, and
+      `2004-433` = the fully-empty archive row): **zero console errors or unhandled rejections,
+      and `documentElement.scrollWidth <= 375` everywhere**. Spot-checked against M2's golden data:
+      poule 1 of 2025-242 and the B2 final SIKLOSI 9 – KANO 10 both render correctly.
+    - Fixed during verification: **`grid-2`/`grid-3` used a bare `minmax(420px, 1fr)` floor, which
+      can't shrink — the home page scrolled sideways at 375px**; now `minmax(min(420px, 100%), 1fr)`.
+      Same class of bug in `.poule-list`, whose implicit `auto` track sized itself from the poule
+      grid's max-content width (competition detail page was 700px wide at a 375px viewport); now an
+      explicit `minmax(0, 1fr)`.
+    - Polish: DE round codes of 2/4/8 now read Final / Semi-final / Quarter-final instead of
+      "Table of 2" (checked across all 3,092 competitions — a table of 2 or 4 is always the real
+      one; a preliminary tableau always feeds the main one well above that size); competition
+      ranking defaults to the top 16 rather than 64 so the poules and bracket aren't buried;
+      filter/picker `<label>`s forced to `display:block` (the season label sat beside its select);
+      prose capped at 72ch on the methodology page; bout/poule/entry count pluralisation.
+    - Also fixed `build_site.build_meta`'s `pd.Timestamp.utcnow()` deprecation (→ `.now("UTC")`),
+      the one warning `pytest` emitted. `pytest`: **77/77 green.**
+    - **Pages is not enabled and nothing has been pushed** — that needs the user's go-ahead.
 - [ ] M7 — Proposal + backlog docs

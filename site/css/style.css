@@ -135,8 +135,11 @@ main { flex: 1; padding: 1.5rem 1rem 3rem; }
 .grid > * { min-width: 0; }
 /* 420px keeps this to two columns at desktop width — three columns squeeze the
    wider tables (competition + champion) into a horizontal scroll. */
-.grid-2 { grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); }
-.grid-3 { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+/* min() keeps the track from forcing the page wider than the viewport: a bare
+   minmax(420px, …) floor can't shrink, so on a 375px screen the grid — and the
+   whole page with it — would scroll sideways. */
+.grid-2 { grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); }
+.grid-3 { grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); }
 
 .page-head { margin-bottom: 1.25rem; }
 .page-head h1 { margin-bottom: .25rem; }
@@ -212,6 +215,8 @@ details.table-view summary { cursor: pointer; color: var(--text-secondary); font
 /* ---------- competition browser ---------- */
 
 .filter-row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; }
+/* Labels sit above their control — inline ones end up beside the <select>. */
+.filter-row label, .h2h-picker label { display: block; }
 .filter-row .grow { flex: 1 1 260px; min-width: 0; }
 .select {
   font: inherit; margin: .25rem 0 1rem; padding: .6rem .5rem;
@@ -236,7 +241,10 @@ details.table-view summary { cursor: pointer; color: var(--text-secondary); font
 }
 .podium-1 { border-left-color: var(--gold); }
 
-.poule-list { display: grid; gap: 1.25rem; }
+/* An explicit minmax(0, …) track: an implicit `auto` one is sized from the
+   poule grid's max-content width, which pushes the page sideways instead of
+   letting each table scroll inside its own .table-scroll. */
+.poule-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.25rem; }
 .poule h3 { margin-bottom: .35rem; color: var(--text-secondary); font-size: .875rem; }
 .poule-grid td, .poule-grid th { padding: .3rem .4rem; }
 .grid-cell {
@@ -295,6 +303,8 @@ details.table-view summary { cursor: pointer; color: var(--text-secondary); font
 
 /* ---------- prose ---------- */
 
+/* Running text gets a readable measure; the metrics table stays full width. */
+.prose > p, .prose > ul { max-width: 72ch; }
 .prose ul { margin: 0 0 .75rem; padding-left: 1.1rem; }
 .prose li { margin-bottom: .35rem; }
 .prose code {

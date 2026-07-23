@@ -69,9 +69,15 @@ export const levelName = (code) => LEVEL_NAMES[code] ?? code ?? "—";
 // A competition can run a preliminary "A" tableau into the main "B" one, so
 // "table of 64" is not unique within an event — Final/Semi-final naming is
 // left to the caller, which knows where a round sits in the ordered list.
+// Rounds of 2 and 4 are named rather than numbered: across all 3,092
+// competitions on record a table of 2 or 4 is always the real final / semi —
+// a preliminary tableau always feeds the main one well above that size.
+const ROUND_NAMES = { 2: "Final", 4: "Semi-final", 8: "Quarter-final" };
+
 export function roundLabel(code) {
   const match = /^([A-Za-z]*)(\d+)$/.exec(code ?? "");
   if (!match) return code ?? "—";
   const [, prefix, digits] = match;
-  return prefix ? `Table of ${digits}` : `Round ${digits}`;
+  if (!prefix) return `Round ${digits}`;
+  return ROUND_NAMES[digits] ?? `Table of ${digits}`;
 }
