@@ -1,8 +1,18 @@
 // Fencer profile: career summary, rating timeline chart, full results history
 // and top rivals, from data/fencers/{id%100}/{id}.json.
 
-import { getFencer, weaponName } from "../data.js";
+import { getFencer, getMeta, weaponName } from "../data.js";
 import { el, fencerLink, fmtDate, fmtInt, fmtNum, seasonOf } from "../util.js";
+
+// Result rows carry their metrics as a fixed-order array (`m`) keyed by
+// `meta.json`'s registry, so nothing here hardcodes a column position.
+function metricReader(meta) {
+  const index = new Map((meta?.metrics ?? []).map((m, i) => [m.code, i]));
+  return (row, code) => {
+    const i = index.get(code);
+    return i === undefined ? null : row.m?.[i] ?? null;
+  };
+}
 
 function head(f) {
   const bits = [
@@ -161,19 +171,20 @@ function ratingCard(f) {
 }
 
 const RESULT_COLUMNS = [
-  ["POS", "Place", (r) => (r.POS ? `#${r.POS}` : "—")],
-  ["PVICT", "Poule wins", (r) => fmtInt(r.PVICT)],
-  ["PIND", "Poule win %", (r) => (r.PIND === null || r.PIND === undefined ? "—" : `${Math.round(r.PIND * 100)}%`)],
-  ["PTD", "Poule touches for", (r) => fmtNum(r.PTD, 0)],
-  ["PTR", "Poule touches vs", (r) => fmtNum(r.PTR, 0)],
-  ["TMVAVG", "DE wins", (r) => fmtInt(r.TMVAVG)],
+  ["POS", "Place", (v) => (v ? `#${v}` : "—")],
+  ["PVICT", "Poule wins", (v) => fmtInt(v)],
+  ["PIND", "Poule win %", (v) => (v === null || v === undefined ? "—" : `${Math.round(v * 100)}%`)],
+  ["PTD", "Poule touches for", (v) => fmtNum(v, 0)],
+  ["PTR", "Poule touches vs", (v) => fmtNum(v, 0)],
+  ["TMVAVG", "DE wins", (v) => fmtInt(v)],
 ];
 
-function resultsCard(f) {
+function resultsCard(f, get) {
   const results = [...f.results].sort((a, b) => (a.date < b.date ? 1 : -1));
 
-  const rows = results.map((r) =>
-    el("tr", {}, [
+  const rows = results.map((r) => {
+    const place = get(r, "POS");
+    return el("tr", {}, [
       el("td", { class: "small", text: seasonOf(r.date) }),
       el("td", {}, [
         el("a", { href: `#/competition/${r.competition_id}`, text: r.name || r.competition_id }),
@@ -182,11 +193,13 @@ function resultsCard(f) {
       el("td", { class: "small", text: fmtDate(r.date) }),
       el("td", { class: "small", text: weaponName(r.weapon) }),
       el("td", { class: "num" }, [
-        el("span", { class: r.POS === 1 ? "medal-1" : null, text: r.POS ? `#${r.POS}` : "—" }),
+        el("span", { class: place === 1 ? "medal-1" : null, text: place ? `#${place}` : "—" }),
       ]),
-      ...RESULT_COLUMNS.slice(1).map(([, , get]) => el("td", { class: "num", text: get(r) })),
-    ])
-  );
+      ...RESULT_COLUMNS.slice(1).map(([code, , fmt]) =>
+        el("td", { class: "num", text: fmt(get(r, code)) })
+      ),
+    ]);
+  });
 
   return el("section", { class: "card" }, [
     el("h2", { text: `Results (${fmtInt(results.length)} competitions)` }),
@@ -249,6 +262,10 @@ export async function render({ parts }) {
   const id = Number(parts[1]);
   if (!Number.isFinite(id)) throw new Error(`Not a fencer id: ${parts[1]}`);
 
+  // `meta` carries the metric registry the result table is keyed by; a missing
+  // shard is the expected case below, a missing meta.json is not.
+  const meta = await getMeta();
+
   let fencer;
   try {
     fencer = await getFencer(id);
@@ -267,7 +284,7 @@ export async function render({ parts }) {
     el("div", { class: "grid", style: "margin-top:1rem" }, [
       ratingCard(fencer),
       rivalsCard(fencer),
-      resultsCard(fencer),
+      resultsCard(fencer, metricReader(meta)),
     ]),
   ]);
 }

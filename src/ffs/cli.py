@@ -7,7 +7,7 @@ import pandas as pd
 
 from ffs import __version__
 from ffs import devalue, elo, h2h, schema, stats
-from ffs.build_site import EAGER_SIZE_WARN_BYTES, build_site
+from ffs.build_site import EAGER_SIZE_WARN_BYTES, build_site, is_eager
 from ffs.discover import list_competitions
 from ffs.fie_client import FieClient
 from ffs.parse import parse_competition
@@ -251,10 +251,9 @@ def cmd_build_site(args: argparse.Namespace) -> int:
     print("site/data size report:")
     for path, size in report.items():
         total += size
-        # per-shard aggregates ("fencers/{shard}/*.json (N files)") are lazy,
-        # not eager -- the guardrail only applies to single eagerly-fetched files
-        is_aggregate = "(" in path
-        flag = "  [!] >1.5MB eager file" if size > EAGER_SIZE_WARN_BYTES and not is_aggregate else ""
+        # The guardrail only applies to files a first visit actually fetches;
+        # per-page files (shards, competitions, h2h, explore, paths) are lazy.
+        flag = "  [!] >1.5MB eager file" if size > EAGER_SIZE_WARN_BYTES and is_eager(path) else ""
         print(f"  {path:45s} {size / 1024:8.1f} KB{flag}")
     print(f"  {'TOTAL':45s} {total / 1024:8.1f} KB")
     return 0

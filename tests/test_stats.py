@@ -57,13 +57,13 @@ def test_242_champion_has_no_poule_data_but_qualified(stats_242):
     # placeholder row for him (never appears in any pool's actual fencer
     # list) -- see stats.py's module docstring. PEXMPT=1, every poule
     # numeric column NaN, but he still won the tableau (Q=1, T64+=1,
-    # T96+=0 -- never played an A64-round bout).
+    # TPRE64=0 -- never played an A64-round bout).
     row = stats_242[stats_242["athlete_id"] == 34385].iloc[0]
     assert row["POS"] == 1
     assert row["Q"] == 1
     assert row["PEXMPT"] == 1
     assert row["T64+"] == 1
-    assert row["T96+"] == 0
+    assert row["TPRE64"] == 0
     for col in stats.POULE_COLS:
         if col == "PEXMPT":
             continue
@@ -102,7 +102,7 @@ def test_242_non_qualifier_has_explicit_q_zero(stats_242, tables_242):
     assert len(non_qualifiers) > 0
     assert (non_qualifiers["Q"] == 0).all()
     assert non_qualifiers["T64+"].eq(0).all()
-    assert non_qualifiers["T96+"].eq(0).all()
+    assert non_qualifiers["TPRE64"].eq(0).all()
     assert non_qualifiers["TMVAVG"].isna().all()
 
 

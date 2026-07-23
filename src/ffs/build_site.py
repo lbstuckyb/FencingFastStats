@@ -27,6 +27,16 @@ Output layout (all paths relative to `site/data/`):
 - `h2h/{lo}-{hi}.json` — head-to-head detail for pairs with **>=5** bouts
   (`lo`/`hi` = the two athlete ids sorted ascending, matching `h2h.parquet`'s
   canonical pair key): per-pool aggregates plus the bout-by-bout list.
+- `explore/{weapon}{gender}.json` — the metrics explorer's source data: one
+  pre-aggregated row per (athlete, season, competition-level group) holding
+  per-metric **sums** plus the population counts of `metrics.COUNT_SOURCE`,
+  so the client can re-aggregate any season range × level-group subset
+  correctly without re-fetching. Lazy: only the explorer page loads one.
+- `paths/{weapon}{gender}.json` — the trajectories page's cohort curves: for
+  each cohort tier and each metric, a by-age distribution (n / mean /
+  p25 / p50 / p75). Cohorts are "this athlete's peak rating ever placed them
+  in the top N of their pool" — a FencingFastStats measure, not an FIE
+  ranking (there is no FIE ranking anywhere in this dataset). Also lazy.
 
 Per the plan's size guardrail ("prune per-fencer shards to athletes with
 >=2 comps"), athletes with exactly one competition result get no shard —
@@ -49,11 +59,38 @@ from pathlib import Path
 
 import pandas as pd
 
+from ffs import metrics as metrics_registry
+
 CANONICAL_DIR = Path("data/canonical")
 SITE_DATA_DIR = Path("site/data")
 
 WEAPONS = ["E", "F", "S"]
 GENDERS = ["M", "F"]
+
+# fie.org's `level` codes bucketed into the tiers a reader actually filters on
+# (legacy's COPA / GP / MUNDIAL / ZONAL competition-type picker, widened to
+# cover every code the archive uses). `OTH` is the catch-all so an unseen
+# future code still lands somewhere rather than dropping rows silently.
+LEVEL_GROUPS: list[tuple[str, str, list[str]]] = [
+    ("WC", "World Cup", ["A"]),
+    ("GP", "Grand Prix", ["GP"]),
+    ("WCH", "World & Olympic", ["CHM", "JO", "OF"]),
+    ("ZON", "Zonal championships", ["CHZ", "CHE"]),
+    ("SAT", "Satellite", ["SA"]),
+    ("NAT", "National / other FIE", ["NF"]),
+    ("OTH", "Other", []),
+]
+LEVEL_GROUP_CODES = [code for code, _, _ in LEVEL_GROUPS]
+LEVEL_TO_GROUP = {level: code for code, _, levels in LEVEL_GROUPS for level in levels}
+DEFAULT_LEVEL_GROUPS = ["WC", "GP"]
+
+# Trajectory cohorts: "the athlete's peak rating ever placed them this high in
+# their (weapon, gender) pool". `all` = every athlete with a profile.
+COHORT_TIERS: list[tuple[str, int | None]] = [
+    ("top10", 10), ("top32", 32), ("top100", 100), ("all", None),
+]
+PATH_AGES = list(range(12, 46))
+MIN_COHORT_AGE_SAMPLE = 3
 
 MIN_COMPS_FOR_SHARD = 2
 MIN_H2H_BOUTS_FOR_SUMMARY = 3
@@ -64,6 +101,15 @@ RECENT_N_COMPS = 20
 TOP_N_RIVALS = 10
 
 EAGER_SIZE_WARN_BYTES = 1_500_000
+
+# Files the site fetches on a normal first visit -- these are what the 1.5 MB
+# guardrail is about. Everything else (`fencers/{shard}`, `competitions/{id}`,
+# `h2h`, `explore`, `paths`) is fetched only by the one page that needs it.
+EAGER_PREFIXES = ("meta.json", "fencers/index.json", "competitions/index.json", "summary/")
+
+
+def is_eager(rel_path: str) -> bool:
+    return rel_path.startswith(EAGER_PREFIXES)
 
 
 def _json_default(obj):
@@ -116,6 +162,18 @@ def build_meta(tables: dict[str, pd.DataFrame], bouts_count: int) -> dict:
         "n_bouts": bouts_count,
         "weapons": WEAPONS,
         "genders": GENDERS,
+        # The metric registry travels with the data so no JS view ever
+        # hardcodes a label, an aggregation or a sort direction.
+        **metrics_registry.registry_json(),
+        "level_groups": [
+            {"code": code, "label": label, "levels": levels}
+            for code, label, levels in LEVEL_GROUPS
+        ],
+        "default_level_groups": DEFAULT_LEVEL_GROUPS,
+        "cohort_tiers": [
+            {"code": code, "label": "All rated fencers" if n is None else f"Top {n}", "n": n}
+            for code, n in COHORT_TIERS
+        ],
     }
 
 
@@ -228,9 +286,47 @@ def build_summary(
     }
 
 
-STATS_PROFILE_COLS = [
-    "POS", "Q", "PVICT", "PTR", "PTD", "PIND", "TTR", "TTD", "TMVAVG", "T64+", "T96+",
-]
+# Shards carry *every* metric, as a fixed-order array keyed by
+# `meta.json`'s `metrics` list rather than 23 named keys -- 23 short repeated
+# key strings per result row would have cost more than the 12 extra values.
+STATS_PROFILE_COLS = metrics_registry.METRIC_CODES
+
+
+def _metric_value(value):
+    """One metric value, JSON-ready: `None` for missing, a plain int when the
+    value is integral (most of them are -- `"POS":1` rather than `"POS":1.0`
+    across 260k result rows is worth the branch), otherwise rounded to 4dp
+    (the source metrics are means of small integers; more digits is noise)."""
+    if pd.isna(value):
+        return None
+    value = float(value)
+    return int(value) if value.is_integer() else round(value, 4)
+
+
+def compute_peak_ratings(
+    ratings_history: pd.DataFrame, shard_ids: set[int] | None = None
+) -> pd.DataFrame:
+    """Each athlete's highest rating ever in each (weapon, gender) pool, plus
+    that peak's rank within the pool — the basis for the profile's peak-rating
+    figure and for the trajectory cohorts.
+
+    Ranking is over athletes who have a profile shard, so a rank shown on the
+    site always refers to a set the reader can actually browse, and a
+    one-competition fencer's single lucky result can't displace a career.
+
+    Columns: `athlete_id, weapon, gender, peak, rank`.
+    """
+    if shard_ids is not None:
+        ratings_history = ratings_history[ratings_history["athlete_id"].isin(shard_ids)]
+    peak = (
+        ratings_history.groupby(["athlete_id", "weapon", "gender"], as_index=False)["post"]
+        .max()
+        .rename(columns={"post": "peak"})
+    )
+    peak["rank"] = (
+        peak.groupby(["weapon", "gender"])["peak"].rank(method="min", ascending=False).astype(int)
+    )
+    return peak
 
 
 def _group_dict(df: pd.DataFrame, key) -> dict:
@@ -271,6 +367,12 @@ class ProfileContext:
         self.ratings_by_athlete = _group_dict(tables["ratings_history"], "athlete_id")
         self.h2h_by_athlete = _h2h_by_athlete(tables["h2h"])
         self.primary_gender_by_athlete = primary_gender_by_athlete
+        peaks = compute_peak_ratings(tables["ratings_history"], shard_ids)
+        # (athlete_id, weapon, gender) -> (peak rating, rank in that pool)
+        self.peak_by_pool = {
+            (int(r.athlete_id), r.weapon, r.gender): (round(float(r.peak), 1), int(r.rank))
+            for r in peaks.itertuples(index=False)
+        }
         self.empty_results = tables["results"].iloc[0:0]
         self.empty_stats = tables["stats_fencer_comp"].iloc[0:0]
         self.empty_ratings = tables["ratings_history"].iloc[0:0]
@@ -301,9 +403,9 @@ def build_fencer_profile(athlete_id: int, ctx: ProfileContext) -> dict:
             "gender": row["gender"],
             "category": row["category"],
             "level": row["level"],
+            # Fixed-order metric values, keyed by `meta.json`'s `metrics`.
+            "m": [_metric_value(row[col]) for col in STATS_PROFILE_COLS],
         }
-        for col in STATS_PROFILE_COLS:
-            entry[col] = row[col]
         results_out.append(entry)
 
     # --- Career summary per weapon ---
@@ -320,12 +422,17 @@ def build_fencer_profile(athlete_id: int, ctx: ProfileContext) -> dict:
             pool_ratings = pool_ratings.join(competitions[["start_date"]], on="competition_id")
             current_rating = round(float(pool_ratings.sort_values("start_date").iloc[-1]["post"]), 1)
         best_rank = group["POS"].min()
+        # Peak rating and where that peak stands among every profiled fencer
+        # of this pool -- a FencingFastStats measure, not an FIE ranking.
+        peak_rating, peak_pool_rank = ctx.peak_by_pool.get((int(athlete_id), weapon, gender), (None, None))
         career.append({
             "weapon": weapon,
             "n_comps": int(len(group)),
             "best_rank": None if pd.isna(best_rank) else int(best_rank),
             "titles": int((group["POS"] == 1).sum()),
             "current_rating": current_rating,
+            "peak_rating": peak_rating,
+            "peak_pool_rank": peak_pool_rank,
         })
     career.sort(key=lambda c: c["n_comps"], reverse=True)
 
@@ -637,6 +744,201 @@ def build_h2h_pair(
     }
 
 
+# ------------------------------------------------------- explore / trajectories
+
+def _pool_metric_rows(
+    tables: dict[str, pd.DataFrame], weapon: str, gender: str, shard_ids: set[int] | None
+) -> pd.DataFrame:
+    """Every stats row of one (weapon, gender) pool, restricted to athletes
+    with a profile shard and carrying the competition's `season`, `start_date`
+    and level group. Metric columns are plain float64 so the aggregations
+    below don't have to care which nullable dtype the parquet used."""
+    competitions = tables["competitions"]
+    pool = competitions[(competitions["weapon"] == weapon) & (competitions["gender"] == gender)]
+
+    stats = tables["stats_fencer_comp"]
+    df = stats[stats["competition_id"].isin(set(pool["competition_id"]))]
+    if shard_ids is not None:
+        df = df[df["athlete_id"].isin(shard_ids)]
+    df = df.merge(
+        pool[["competition_id", "season", "start_date", "level"]], on="competition_id", how="left"
+    )
+    df["lg"] = df["level"].map(LEVEL_TO_GROUP).fillna("OTH")
+    df["athlete_id"] = df["athlete_id"].astype("int64")
+    df["season"] = df["season"].astype("int64")
+    codes = metrics_registry.METRIC_CODES
+    df[codes] = df[codes].astype("float64")
+    return df
+
+
+def build_explore(
+    weapon: str, gender: str, tables: dict[str, pd.DataFrame], shard_ids: set[int] | None = None
+) -> dict:
+    """Pre-aggregated explorer rows for one pool: one row per (athlete,
+    season, level group).
+
+    Rows hold **sums**, not means, plus the population counts of
+    `metrics.COUNT_SOURCE` — so the client can add up any season range ×
+    level-group subset the reader picks and divide once at the end, and get
+    the same number a full re-aggregation would. Means can't be pre-computed
+    here for the same reason: the mean of per-season means is not the mean.
+
+    Row layout (see `row_format` in the output):
+    `[athlete_id, season, level_group_index, *counts, *metric_sums]`.
+    """
+    df = _pool_metric_rows(tables, weapon, gender, shard_ids)
+    codes = metrics_registry.METRIC_CODES
+
+    grouped = df.groupby(["athlete_id", "season", "lg"], sort=True)
+    sums = grouped[codes].sum(min_count=1)
+    counts = pd.DataFrame(
+        {key: grouped[source].count() for key, source in metrics_registry.COUNT_SOURCE.items()}
+    )
+
+    lg_index = {code: i for i, code in enumerate(LEVEL_GROUP_CODES)}
+    rows = []
+    for key, count_row in counts.iterrows():
+        athlete_id, season, lg = key
+        sum_row = sums.loc[key]
+        rows.append(
+            [int(athlete_id), int(season), lg_index[lg]]
+            + [int(count_row[k]) for k in metrics_registry.COUNT_KEYS]
+            + [_metric_value(sum_row[c]) for c in codes]
+        )
+
+    return {
+        "weapon": weapon,
+        "gender": gender,
+        "level_groups": LEVEL_GROUP_CODES,
+        "counts": metrics_registry.COUNT_KEYS,
+        "metrics": codes,
+        "row_format": "[athlete_id, season, level_group_index, ...counts, ...metric_sums]",
+        "rows": rows,
+    }
+
+
+def _rating_by_age(
+    tables: dict[str, pd.DataFrame], weapon: str, gender: str, birth_year: pd.Series
+) -> pd.Series:
+    """Each athlete's rating *at* a given age: the last rating they carried
+    away from a competition in that calendar year, not the year's average —
+    "where they had got to by then" is the quantity a trajectory compares."""
+    ratings = tables["ratings_history"]
+    ratings = ratings[(ratings["weapon"] == weapon) & (ratings["gender"] == gender)]
+    ratings = ratings.merge(
+        tables["competitions"][["competition_id", "start_date"]], on="competition_id", how="left"
+    )
+    ratings["age"] = (
+        pd.to_datetime(ratings["start_date"]).dt.year
+        - ratings["athlete_id"].map(birth_year)
+    )
+    ratings = ratings.dropna(subset=["age"]).sort_values("start_date")
+    ratings["athlete_id"] = ratings["athlete_id"].astype("int64")
+    ratings["age"] = ratings["age"].astype("int64")
+    return ratings.groupby(["athlete_id", "age"])["post"].last().astype("float64")
+
+
+def build_paths(
+    weapon: str, gender: str, tables: dict[str, pd.DataFrame], shard_ids: set[int] | None = None
+) -> dict:
+    """By-age cohort curves for one pool — the "is this fencer on the path of
+    a future top-10?" view.
+
+    A cohort is every profiled fencer whose **peak FencingFastStats rating**
+    ever placed them in the top N of this pool. That is a rating computed
+    here from bout results, not an FIE ranking: the FIE's official points and
+    rankings are not part of this dataset at all, so the tiers must always be
+    labelled as this project's own measure.
+
+    For every cohort tier and every series, the output holds the by-age
+    distribution across the cohort's members: `{age: [n, mean, p25, p50,
+    p75]}`. The median and the quartile band, rather than legacy's bare mean,
+    are what make "on track" legible — a single mean can't show how wide the
+    path is. Ages with fewer than `MIN_COHORT_AGE_SAMPLE` members are omitted
+    rather than shown as a spike of one.
+    """
+    df = _pool_metric_rows(tables, weapon, gender, shard_ids)
+    codes = metrics_registry.METRIC_CODES
+
+    birth_year = tables["athletes"].set_index("athlete_id")["birth_year"]
+    df["age"] = pd.to_datetime(df["start_date"]).dt.year - df["athlete_id"].map(birth_year)
+    df = df.dropna(subset=["age"])
+    df["age"] = df["age"].astype("int64")
+    df = df[df["age"].between(PATH_AGES[0], PATH_AGES[-1])]
+
+    df["_podium"] = (df["POS"] <= 3).astype("float64")
+    df["_title"] = (df["POS"] == 1).astype("float64")
+
+    # --- one value per (athlete, age): their own season, aggregated their way
+    grouped = df.groupby(["athlete_id", "age"])
+    mean_codes = [c for c in codes if metrics_registry.BY_CODE[c].agg == "mean"]
+    sum_codes = [c for c in codes if metrics_registry.BY_CODE[c].agg == "sum"]
+    per_athlete = grouped[mean_codes].mean()
+    for code in sum_codes:
+        per_athlete[code] = grouped[code].sum(min_count=1)
+    per_athlete["n_comps"] = grouped.size().astype("float64")
+    per_athlete["rate_t64"] = grouped["T64+"].mean()
+    per_athlete["rate_tpre64"] = grouped["TPRE64"].mean()
+    per_athlete["rate_podium"] = grouped["_podium"].mean()
+    per_athlete["rate_title"] = grouped["_title"].mean()
+    per_athlete["rating"] = _rating_by_age(tables, weapon, gender, birth_year)
+
+    series_codes = codes + [s["code"] for s in metrics_registry.PATH_EXTRA_SERIES]
+    per_athlete = per_athlete[series_codes].reset_index()
+
+    peaks = compute_peak_ratings(tables["ratings_history"], shard_ids)
+    peaks = peaks[(peaks["weapon"] == weapon) & (peaks["gender"] == gender)]
+
+    tiers = {}
+    cohort_ids = {}
+    for tier_code, top_n in COHORT_TIERS:
+        if top_n is None:
+            members = set(per_athlete["athlete_id"])
+        else:
+            members = {int(a) for a in peaks[peaks["rank"] <= top_n]["athlete_id"]}
+            cohort_ids[tier_code] = sorted(members)
+        subset = per_athlete[per_athlete["athlete_id"].isin(members)]
+        tiers[tier_code] = {
+            "n_athletes": int(subset["athlete_id"].nunique()),
+            "series": _by_age_distribution(subset, series_codes),
+        }
+
+    return {
+        "weapon": weapon,
+        "gender": gender,
+        "ages": PATH_AGES,
+        "series": series_codes,
+        "point_format": "[n, mean, p25, p50, p75]",
+        "tiers": tiers,
+        "cohort_ids": cohort_ids,
+    }
+
+
+def _by_age_distribution(per_athlete: pd.DataFrame, series_codes: list[str]) -> dict:
+    """`{series: {age: [n, mean, p25, p50, p75]}}` over one cohort's
+    per-(athlete, age) values."""
+    if per_athlete.empty:
+        return {code: {} for code in series_codes}
+
+    by_age = per_athlete.groupby("age")[series_codes]
+    n = by_age.count()
+    mean = by_age.mean()
+    q25, q50, q75 = (by_age.quantile(q) for q in (0.25, 0.5, 0.75))
+
+    out: dict[str, dict] = {}
+    for code in series_codes:
+        points = {}
+        for age in n.index:
+            count = int(n.at[age, code])
+            if count < MIN_COHORT_AGE_SAMPLE:
+                continue
+            points[str(int(age))] = [count] + [
+                _metric_value(frame.at[age, code]) for frame in (mean, q25, q50, q75)
+            ]
+        out[code] = points
+    return out
+
+
 def build_site() -> dict:
     """Builds all artifacts, writes them under `site/data/`, returns a
     size report dict (path -> bytes) for the caller to print / gate on."""
@@ -657,6 +959,19 @@ def build_site() -> dict:
             summary = build_summary(weapon, gender, tables)
             rel = f"summary/{weapon.lower()}{gender.lower()}.json"
             report[rel] = _write_json(SITE_DATA_DIR / rel, summary)
+
+    # --- explorer + trajectory sources (lazy, page-scoped: not eager files) ---
+    for weapon in WEAPONS:
+        for gender in GENDERS:
+            pool = f"{weapon.lower()}{gender.lower()}"
+            explore = build_explore(weapon, gender, tables, shard_ids)
+            report[f"explore/{pool}.json"] = _write_json(
+                SITE_DATA_DIR / "explore" / f"{pool}.json", explore
+            )
+            paths = build_paths(weapon, gender, tables, shard_ids)
+            report[f"paths/{pool}.json"] = _write_json(
+                SITE_DATA_DIR / "paths" / f"{pool}.json", paths
+            )
 
     primary_gender = _athlete_primary_gender(tables["results"], tables["competitions"])
     ctx = ProfileContext(tables, primary_gender, shard_ids)

@@ -76,7 +76,7 @@ Cleanup in Milestone 1: **scrub token fragment at `data/input_new_results.py:72`
 
 ## Stats engine
 
-**`stats.py`** — one row per (competition_id, athlete_id) from bout-level data (explode bouts to fencer perspective, two groupbys). Port every metric from `data/update_data.py:26-98`: POS, Q, PEXMPT, PVICT, PIND, PTR, PTD, PT-DIFF, PMTR, PMTD, PMT-DIFF (+stds), TTR, TTD, TMT-DIFF, TMVAVG (null if Q=0), PM1V%, PM1&2V%, T64+, T96+. Note legacy inconsistency (`p_tr_mean = tr_poules/p_matches` vs `p_td_mean` = row-mean) — replicate intent, document deviations in methodology.md. Plus career aggregates per athlete×weapon for site profiles.
+**`stats.py`** — one row per (competition_id, athlete_id) from bout-level data (explode bouts to fencer perspective, two groupbys). Port every metric from `data/update_data.py:26-98`: POS, Q, PEXMPT, PVICT, PIND, PTR, PTD, PT-DIFF, PMTR, PMTD, PMT-DIFF (+stds), TTR, TTD, TMT-DIFF, TMVAVG (null if Q=0), PM1V%, PM1&2V%, T64+, TPRE64. Note legacy inconsistency (`p_tr_mean = tr_poules/p_matches` vs `p_td_mean` = row-mean) — replicate intent, document deviations in methodology.md. Plus career aggregates per athlete×weapon for site profiles.
 
 **`h2h.py`** — group bouts by unordered pair within (weapon, gender) → `h2h.parquet` (bouts, wins, td, poule/de split, last_met) + `h2h_bouts.parquet` (per-pair bout list for the site).
 
@@ -86,6 +86,7 @@ Cleanup in Milestone 1: **scrub token fragment at `data/input_new_results.py:72`
 
 Small eager bundle + lazy shards via relative `fetch()` (GitHub Pages-safe):
 - `meta.json` (~2 KB); `fencers/index.json` (search index, ≤~1 MB); `summary/{me,mf,we,wf,se,sf}.json` (ELO top-200, leaderboards, comp list); `fencers/{id%100}/{id}.json` (career, per-comp stats, rating timeline, h2h aggregates); `h2h/{lo}-{hi}.json` **only for pairs ≥5 bouts**; `competitions/index.json` + `competitions/{id}.json` (full results, poules, bracket).
+- Added in M6.5: `explore/{pool}.json` (pre-aggregated per (athlete, season, level group) sums + population counts, for the metrics explorer) and `paths/{pool}.json` (by-age cohort distributions for the trajectories page). Both lazy and page-scoped.
 - Size guardrails: warn on eager files >1.5 MB; prune per-fencer shards to athletes with ≥2 comps; measured decision at Milestone 5 whether to commit `site/data/` or generate in CI.
 
 ## Static site pages (`site/`)
@@ -196,7 +197,7 @@ Home (pool selector, ELO top-20, recent comps, leaderboards) · Fencer search (c
   - `data/canonical/` is **5.2 MB** (athletes 620K, bouts 3.8M, competitions 64K, results 732K) — comfortably under the 50MB threshold, so it's committed (un-gitignored); `data/raw_cache/` (HTTP cache) stays gitignored.
   - `pytest`: 41/41 green, including `test_validate_legacy.py` and `test_cli_scrape_all.py` added in the prior session.
 - [x] M4 — Stats + ELO + H2H
-  - `stats.py`: ported every legacy metric from bout-level data. Two real bugs found and fixed against live data before this was trustworthy: (1) `PIND` was wrongly assumed to be touches-scored-minus-received (`PT-DIFF`); verified against the legacy CSV's actual `poule_ind` values that it's really `PVICT / (poule matches played)`, a win ratio — `PT-DIFF` is computed separately and isn't in the parity list. (2) `Q` was `NaN` instead of legacy's explicit `0` for athletes who competed in a DE-having competition but never qualified past poules — `_de_stats` now emits explicit `Q=0`/`T64+=0`/`T96+=0` rows for every non-qualifier. These two fixes alone took fencer parity from 82.9% → 98.7%. Also fixed: `PEXMPT` now derives from bout presence rather than fie.org's own `results.exempt` flag, which disagreed with bout-level ground truth for at least one real athlete (2025-242's champion KANO Koki).
+  - `stats.py`: ported every legacy metric from bout-level data. Two real bugs found and fixed against live data before this was trustworthy: (1) `PIND` was wrongly assumed to be touches-scored-minus-received (`PT-DIFF`); verified against the legacy CSV's actual `poule_ind` values that it's really `PVICT / (poule matches played)`, a win ratio — `PT-DIFF` is computed separately and isn't in the parity list. (2) `Q` was `NaN` instead of legacy's explicit `0` for athletes who competed in a DE-having competition but never qualified past poules — `_de_stats` now emits explicit `Q=0`/`T64+=0`/`TPRE64=0` rows for every non-qualifier. These two fixes alone took fencer parity from 82.9% → 98.7%. Also fixed: `PEXMPT` now derives from bout presence rather than fie.org's own `results.exempt` flag, which disagreed with bout-level ground truth for at least one real athlete (2025-242's champion KANO Koki).
   - `parse.py` (M2 file, root-cause fix): poule bouts with `score_a==0 and score_b==0` — a fenced bout can never legitimately end 0-0 — were being classified `status='ok'` (a no-show default result fie.org still tags with a normal winner flag), contaminating every poule numeric stat. Now classified `'forfeit'` (winner kept), matching legacy's "D with tr=0" exclusion. Applied retroactively to the already-scraped `bouts.parquet` (4,422 poule rows reclassified `ok`→`forfeit`) rather than re-scraping all 3092 competitions; a fresh `scrape-all` run would produce the same result directly. This took overall parity from 98.7% → 99.3%, clearing the ≥99% gate.
   - `elo.py`/`h2h.py`: ran against the full ~866k-bout dataset for the first time, no bugs found (no dtype/sort issues on nullable `Int64` columns). ELO sniff test passes: top-10 per (weapon, gender) pool surfaces unambiguously correct world-class names (OH Sanguk, SZILAGYI Aron, GRACHEVA Inna, MASSIALAS Alexander, BOREL Yannick, KANO Koki, KHARLAN Olga, VOLPI Alice, etc).
   - **Final `ffs validate` parity: 99.3% overall** (286/286 comps matched 100%; POS 100.0%, PVICT 99.1%, PTD 98.8%, PTR 98.9%, PIND 98.7%, Q 99.9%, TMVAVG 99.8%) across 45,848 matched fencer-rows in 279 competitions — clears the mandatory ≥99% gate. `PTD`/`PTR`/`PVICT` sit just under 99% individually; traced to genuine fie.org archive gaps (specific pools missing individual bout rows entirely, e.g. `2020-385` pool 29) rather than a parser bug — an accepted, already-anticipated limitation since the combined rate clears the gate.
@@ -267,4 +268,66 @@ Home (pool selector, ELO top-20, recent comps, leaderboards) · Fencer search (c
     - Also fixed `build_site.build_meta`'s `pd.Timestamp.utcnow()` deprecation (→ `.now("UTC")`),
       the one warning `pytest` emitted. `pytest`: **77/77 green.**
     - **Pages is not enabled and nothing has been pushed** — that needs the user's go-ahead.
+- [x] M6.5 — Data foundations for the advanced-metric work (this session, 2026-07-23)
+  - Context: a review against the legacy Dash app found three of its analytical features were
+    never carried over (advanced-metric table + comparison, metric-over-time chart, by-age
+    trajectory curves) plus an unexplained ratings card and one wrong column name. Plan for
+    M6.5–M6.8 lives in `~/.claude/plans/it-looks-good-but-sprightly-snail.md`. M6.5 is the
+    data layer only — no new UI.
+  - **`T96+` → `TPRE64` everywhere.** "Table of 96" was a legacy invention, not FIE
+    terminology; the flag really counts entries into the *preliminary* tableau feeding the
+    table of 64 (fie.org round code `A64`). `T64+` keeps its name. The only surviving `T96+`
+    strings outside `legacy/` are the three places that explain the rename. `ffs validate`
+    re-run after the rename: **286/286 competitions matched, fencer parity 99.3% unchanged**
+    (POS 100.0%, PVICT 99.1%, PTD 98.8%, PTR 98.9%, PIND 98.7%, Q 99.9%, TMVAVG 99.8% over
+    45,848 rows) — as expected, `T96+` was never a parity metric.
+  - **New `src/ffs/metrics.py`** — the metric registry, one `Metric(code, label, short, group,
+    agg, better, fmt, den, blurb)` per column, serialized into `meta.json` so no JS view ever
+    hardcodes a label, an aggregation or a sort direction. `agg`/`better` are ports of legacy's
+    own choices (`update_table_ind`'s aggregation dict: `T64+`/`TPRE64` summed, everything else
+    averaged including `POS`; `indres-graph`'s reversed `POS` axis).
+    - `den` is an addition to the planned signature and the non-obvious part: metrics have
+      genuinely different populations (a fencer's 40 results can hold 40 `POS` values but only
+      12 `PVICT` and 9 `TTR`, because pre-~2016 competitions carry no bout data), so
+      re-aggregating pre-summed rows needs eight distinct denominators, not one row count.
+  - **`meta.json`** (7.3 KB) now also carries `level_groups` (fie.org's `A/GP/CHM/JO/OF/CHZ/
+    SA/NF` bucketed into `WC/GP/WCH/ZON/SAT/NAT/OTH`, `OTH` as catch-all), `default_level_groups`
+    (`WC`+`GP`, as legacy defaulted), `cohort_tiers` and `path_series`.
+  - **Fencer shards carry all 23 metrics** instead of 11, as a fixed-order `"m"` array keyed by
+    the registry rather than named keys. This was genuinely size-neutral as predicted: shards
+    total **108 MB, marginally *down* from M6's 111 MB** — dropping 11 repeated key strings per
+    result row paid for the 12 extra values. Career blocks gain `peak_rating` and
+    `peak_pool_rank` (rank of that peak among profiled fencers of the pool).
+  - **New `explore/{pool}.json`** (6 lazy files, 2.2–4.5 MB each, 19 MB total): one row per
+    (athlete, season, level group), `[athlete_id, season, level_group_index, ...8 counts,
+    ...23 metric sums]`. Sums, not means — the client sums the rows the reader's filters select
+    and divides once at the end, which is the only way any season-range × level-group subset
+    comes out right (the mean of per-season means is not the mean).
+  - **New `paths/{pool}.json`** (6 lazy files, ~90–96 KB each): for each cohort tier
+    (`top10/top32/top100/all`) and each of 29 series, the by-age distribution
+    `{age: [n, mean, p25, p50, p75]}` over ages 12–45, ages with <3 members omitted. Cohort =
+    peak **FencingFastStats rating** rank within the pool — there is no FIE ranking anywhere in
+    this dataset, so this must be labelled as the project's own measure wherever it appears
+    (M6.8's job). Series = the 23 metrics plus rating, competitions/year and the four
+    round-entry rates (T64+, TPRE64, podium, title) that replace legacy's `fieresults-graph`.
+    Sniff test, men's épée top-10 cohort: mean `POS` 116 at 18 → 47 at 23, mean rating
+    1615 → 1846, `T64+` rate 13% → 57%. Plausible.
+  - `cli.py`'s eager-size guardrail now keys off an explicit `is_eager()` prefix list rather
+    than "does the report line contain a bracket" — `explore/*` and `paths/*` are lazy and
+    would otherwise have tripped it.
+  - `site/js/views/fencer.js` reads the new `m` array through a registry-driven `metricReader`.
+    No other view consumed named metric keys.
+  - Full rebuild: `ffs build-stats` (4m) → `ffs validate` → `ffs build-site` (~23m). **Total
+    `site/data` 162 MB** (fencers 108, competitions 30, explore 19, h2h 3.1, paths 0.6).
+    Eager files still well under the 1.5 MB guardrail: `fencers/index.json` 1002 KB,
+    `competitions/index.json` 472 KB, summaries 23 KB, `meta.json` 7.3 KB.
+  - Verified 6 routes × light/dark at 375px headlessly (home, search, RODRIGUEZ John Edison's
+    profile, Errigo–Kiefer H2H, 2025-242, methodology): **zero console errors or unhandled
+    rejections, `scrollWidth <= 375` everywhere**, and the profile's results table renders the
+    same values the shard holds. `pytest`: **86/86 green** (77 + 9 new: registry round-trip,
+    level-group coverage, explorer row keying/sums/counts/pruning, peak-rating ranks, cohort
+    membership, by-age distributions, sample floor).
+- [ ] M6.6 — Ratings explainer + Metrics Explorer page
+- [ ] M6.7 — Profile metric chart, per-season table, H2H metric comparison
+- [ ] M6.8 — Trajectories page + polish and verification
 - [ ] M7 — Proposal + backlog docs

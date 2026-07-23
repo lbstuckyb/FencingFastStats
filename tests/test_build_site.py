@@ -8,7 +8,7 @@ down on data whose expected output can be read off by eye.
 import pandas as pd
 import pytest
 
-from ffs import build_site
+from ffs import build_site, metrics
 
 
 @pytest.fixture
@@ -17,16 +17,16 @@ def tables():
         # (weapon, gender) pools: EM has two comps, EF one, FM one.
         {"competition_id": "2024-1", "season": 2024, "tournament_id": 1, "name": "Coupe du Monde",
          "city": "Bern", "country": "Switzerland", "start_date": "2024-03-01", "weapon": "E",
-         "gender": "M", "category": "S", "level": "CDM", "n_entries": 200},
+         "gender": "M", "category": "S", "level": "A", "n_entries": 200},
         {"competition_id": "2024-2", "season": 2024, "tournament_id": 2, "name": "Grand Prix",
          "city": "Doha", "country": "Qatar", "start_date": "2024-05-01", "weapon": "E",
          "gender": "M", "category": "S", "level": "GP", "n_entries": 150},
         {"competition_id": "2023-3", "season": 2023, "tournament_id": 3, "name": "Championnats du Monde",
          "city": "Milan", "country": "Italy", "start_date": "2023-07-01", "weapon": "E",
-         "gender": "F", "category": "S", "level": "CM", "n_entries": 120},
+         "gender": "F", "category": "S", "level": "CHM", "n_entries": 120},
         {"competition_id": "2024-4", "season": 2024, "tournament_id": 4, "name": "Coupe du Monde",
          "city": "Paris", "country": "France", "start_date": "2024-02-01", "weapon": "F",
-         "gender": "M", "category": "S", "level": "CDM", "n_entries": 180},
+         "gender": "M", "category": "S", "level": "A", "n_entries": 180},
     ])
     athletes = pd.DataFrame([
         {"athlete_id": 1, "name": "ALPHA Ann", "country": "FRA", "birth_year": 1990, "hand": "Right"},
@@ -43,16 +43,19 @@ def tables():
     ])
     stats = pd.DataFrame([
         {"competition_id": "2024-1", "athlete_id": 1, "POS": 1, "Q": 1, "PVICT": 5, "PTR": 12, "PTD": 25,
-         "PIND": 0.83, "TTR": 10.0, "TTD": 15.0, "TMVAVG": 4, "T64+": 1, "T96+": 1},
+         "PIND": 0.83, "TTR": 10.0, "TTD": 15.0, "TMVAVG": 4, "T64+": 1, "TPRE64": 1},
         {"competition_id": "2024-1", "athlete_id": 2, "POS": 2, "Q": 1, "PVICT": 4, "PTR": 15, "PTD": 22,
-         "PIND": 0.67, "TTR": 12.0, "TTD": 14.0, "TMVAVG": 3, "T64+": 1, "T96+": 1},
+         "PIND": 0.67, "TTR": 12.0, "TTD": 14.0, "TMVAVG": 3, "T64+": 1, "TPRE64": 1},
         {"competition_id": "2024-2", "athlete_id": 1, "POS": 3, "Q": 1, "PVICT": 4, "PTR": 14, "PTD": 23,
-         "PIND": 0.67, "TTR": 11.0, "TTD": 13.0, "TMVAVG": 2, "T64+": 1, "T96+": 1},
+         "PIND": 0.67, "TTR": 11.0, "TTD": 13.0, "TMVAVG": 2, "T64+": 1, "TPRE64": 1},
         {"competition_id": "2024-2", "athlete_id": 2, "POS": 1, "Q": 1, "PVICT": 6, "PTR": 10, "PTD": 30,
-         "PIND": 1.0, "TTR": 9.0, "TTD": 15.0, "TMVAVG": 4, "T64+": 1, "T96+": 1},
+         "PIND": 1.0, "TTR": 9.0, "TTD": 15.0, "TMVAVG": 4, "T64+": 1, "TPRE64": 1},
         {"competition_id": "2024-4", "athlete_id": 3, "POS": 5, "Q": 1, "PVICT": 3, "PTR": 18, "PTD": 20,
-         "PIND": 0.5, "TTR": 13.0, "TTD": 12.0, "TMVAVG": 1, "T64+": 1, "T96+": 1},
+         "PIND": 0.5, "TTR": 13.0, "TTD": 12.0, "TMVAVG": 1, "T64+": 1, "TPRE64": 1},
     ])
+    # The builders read every registry metric; the ones not spelled out above
+    # are absent (NaN) -- exactly what an archive gap looks like in real data.
+    stats = stats.reindex(columns=["competition_id", "athlete_id", *metrics.METRIC_CODES])
     ratings = pd.DataFrame([
         {"competition_id": "2024-1", "athlete_id": 1, "weapon": "E", "gender": "M", "pre": 1500.0, "post": 1540.0},
         {"competition_id": "2024-2", "athlete_id": 1, "weapon": "E", "gender": "M", "pre": 1540.0, "post": 1555.5},
@@ -182,6 +185,11 @@ def test_summary_of_an_empty_pool_is_still_valid(tables):
     assert summary["leaderboards"] == {"titles": [], "podiums": []}
 
 
+def _metric(result_row, code):
+    """One metric off a shard's fixed-order `m` array (see build_site)."""
+    return result_row["m"][metrics.METRIC_CODES.index(code)]
+
+
 def _context(tables):
     primary_gender = build_site._athlete_primary_gender(tables["results"], tables["competitions"])
     return build_site.ProfileContext(tables, primary_gender)
@@ -195,14 +203,19 @@ def test_fencer_profile_career_results_and_timeline(tables):
     assert profile["birth_year"] == 1990
     assert profile["hand"] == "Right"
 
+    # Athlete 1's 1555.5 is the pool's best peak, so rank 1 of the two profiles.
     assert profile["career"] == [
-        {"weapon": "E", "n_comps": 2, "best_rank": 1, "titles": 1, "current_rating": 1555.5}
+        {"weapon": "E", "n_comps": 2, "best_rank": 1, "titles": 1, "current_rating": 1555.5,
+         "peak_rating": 1555.5, "peak_pool_rank": 1}
     ]
 
-    # Results are newest-first and carry the stats row for that competition.
+    # Results are newest-first and carry the stats row for that competition,
+    # as a registry-ordered array rather than named metric keys.
     assert [r["competition_id"] for r in profile["results"]] == ["2024-2", "2024-1"]
-    assert profile["results"][1]["POS"] == 1
-    assert profile["results"][1]["PVICT"] == 5
+    assert _metric(profile["results"][1], "POS") == 1
+    assert _metric(profile["results"][1], "PVICT") == 5
+    # A metric with no data for that competition is null, not zero.
+    assert _metric(profile["results"][1], "p_tr_std") is None
     assert profile["results"][1]["city"] == "Bern"
 
     # The timeline is oldest-first (chart x-axis order) and keeps pre/post.
@@ -348,3 +361,156 @@ def test_write_json_turns_missing_nullable_values_into_null(tmp_path):
 
     assert path.read_text() == '{"city":null,"date":null,"n":1}'
     assert size == len(path.read_text())
+
+
+# ------------------------------------------------------- metrics registry
+
+def test_meta_carries_the_metric_registry_and_level_groups(tables):
+    meta = build_site.build_meta(tables, bouts_count=987)
+
+    # Registry order is the contract between shards, explorer rows and JS.
+    assert [m["code"] for m in meta["metrics"]] == metrics.METRIC_CODES
+    assert {m["group"] for m in meta["metrics"]} <= {"overall", "poule", "de"}
+    assert {m["agg"] for m in meta["metrics"]} == {"mean", "sum"}
+    assert {m["better"] for m in meta["metrics"]} <= {"low", "high", None}
+    # Legacy's own aggregation choices, ported verbatim.
+    by_code = {m["code"]: m for m in meta["metrics"]}
+    assert by_code["POS"]["agg"] == "mean" and by_code["POS"]["better"] == "low"
+    assert by_code["T64+"]["agg"] == "sum" and by_code["TPRE64"]["agg"] == "sum"
+    # Every metric's denominator names a real counter.
+    assert {m["den"] for m in meta["metrics"]} <= set(meta["counts"])
+
+    assert [g["code"] for g in meta["level_groups"]] == build_site.LEVEL_GROUP_CODES
+    assert meta["default_level_groups"] == ["WC", "GP"]
+
+
+def test_level_groups_cover_every_level_in_the_archive_exactly_once():
+    seen = [level for _, _, levels in build_site.LEVEL_GROUPS for level in levels]
+
+    assert len(seen) == len(set(seen))
+    # Every fie.org level code in the canonical data has a home.
+    for level in ["A", "SA", "GP", "CHZ", "NF", "CHM", "OF", "JO"]:
+        assert level in build_site.LEVEL_TO_GROUP
+    # ...and anything unseen falls to the catch-all rather than vanishing.
+    assert "OTH" in build_site.LEVEL_GROUP_CODES
+    assert "ZZZ" not in build_site.LEVEL_TO_GROUP
+
+
+# ------------------------------------------------------------------ explore
+
+def _explore_row(explore, athlete_id, season, level_group):
+    lg = explore["level_groups"].index(level_group)
+    return next(r for r in explore["rows"] if r[:3] == [athlete_id, season, lg])
+
+
+def _explore_value(explore, row, code):
+    return row[3 + len(explore["counts"]) + explore["metrics"].index(code)]
+
+
+def _explore_count(explore, row, key):
+    return row[3 + explore["counts"].index(key)]
+
+
+def test_explore_rows_are_keyed_by_athlete_season_and_level_group(tables):
+    explore = build_site.build_explore("E", "M", tables, shard_ids={1, 2})
+
+    # 2024-1 is a World Cup, 2024-2 a Grand Prix: two fencers x two groups.
+    assert len(explore["rows"]) == 4
+    assert {tuple(r[:3]) for r in explore["rows"]} == {
+        (1, 2024, explore["level_groups"].index("WC")),
+        (1, 2024, explore["level_groups"].index("GP")),
+        (2, 2024, explore["level_groups"].index("WC")),
+        (2, 2024, explore["level_groups"].index("GP")),
+    }
+    assert explore["metrics"] == metrics.METRIC_CODES
+
+
+def test_explore_rows_hold_sums_and_the_counts_needed_to_average_them(tables):
+    explore = build_site.build_explore("E", "M", tables, shard_ids={1, 2})
+
+    wc = _explore_row(explore, 1, 2024, "WC")
+    gp = _explore_row(explore, 1, 2024, "GP")
+
+    # Sums, not means: one competition each here, so they read off directly.
+    assert _explore_value(explore, wc, "PVICT") == 5
+    assert _explore_value(explore, gp, "PVICT") == 4
+    assert _explore_count(explore, wc, "poule") == 1
+
+    # The client's job: sum over the selected rows, divide by the metric's own
+    # denominator. Athlete 1 across both level groups averages 4.5 poule wins.
+    total = _explore_value(explore, wc, "PVICT") + _explore_value(explore, gp, "PVICT")
+    denominator = _explore_count(explore, wc, "poule") + _explore_count(explore, gp, "poule")
+    assert total / denominator == 4.5
+
+    # A metric with no data anywhere is a null sum with a zero count, so the
+    # client shows "—" rather than dividing by zero.
+    assert _explore_value(explore, wc, "p_tr_std") is None
+    assert _explore_count(explore, wc, "pstd") == 0
+
+
+def test_explore_is_pool_scoped_and_respects_shard_pruning(tables):
+    # Athlete 3's only competition is Men's Foil, and they have no shard.
+    em = build_site.build_explore("E", "M", tables, shard_ids={1, 2})
+    fm = build_site.build_explore("F", "M", tables, shard_ids={1, 2})
+
+    assert all(r[0] != 3 for r in em["rows"])
+    assert fm["rows"] == []
+
+
+# ------------------------------------------------------------------- paths
+
+def test_peak_ratings_rank_within_the_pool(tables):
+    peaks = build_site.compute_peak_ratings(tables["ratings_history"], shard_ids={1, 2})
+
+    by_athlete = {int(r.athlete_id): (r.peak, r.rank) for r in peaks.itertuples(index=False)}
+    assert by_athlete == {1: (1555.5, 1), 2: (1530.0, 2)}
+
+
+def test_paths_cohorts_come_from_peak_rating_rank(tables, monkeypatch):
+    # Two fencers only, so accept an age bucket of one for the fixture.
+    monkeypatch.setattr(build_site, "MIN_COHORT_AGE_SAMPLE", 1)
+
+    paths = build_site.build_paths("E", "M", tables, shard_ids={1, 2})
+
+    # Both fencers rank 1 and 2 on peak rating, so both are in every tier.
+    assert paths["tiers"]["top10"]["n_athletes"] == 2
+    assert paths["cohort_ids"]["top10"] == [1, 2]
+    assert "all" not in paths["cohort_ids"]  # the "all" tier needs no id list
+
+    # Membership really is peak-rank based: narrow the pool to one place and
+    # only the higher peak survives.
+    monkeypatch.setattr(build_site, "COHORT_TIERS", [("top1", 1), ("all", None)])
+    narrowed = build_site.build_paths("E", "M", tables, shard_ids={1, 2})
+    assert narrowed["cohort_ids"]["top1"] == [1]
+    assert narrowed["tiers"]["all"]["n_athletes"] == 2
+
+
+def test_paths_series_are_by_age_distributions(tables, monkeypatch):
+    monkeypatch.setattr(build_site, "MIN_COHORT_AGE_SAMPLE", 1)
+
+    paths = build_site.build_paths("E", "M", tables, shard_ids={1, 2})
+    series = paths["tiers"]["all"]["series"]
+
+    # Athlete 1 (b. 1990) fenced both 2024 competitions at 34; athlete 2 at 29.
+    assert set(series["POS"]) == {"34", "29"}
+    n, mean, p25, p50, p75 = series["POS"]["34"]
+    assert n == 1
+    # POS aggregates as a mean within the year: (1 + 3) / 2.
+    assert mean == p25 == p50 == p75 == 2
+
+    # T64+ sums within the year instead, per the registry.
+    assert series["T64+"]["34"][1] == 2
+
+    # Rating at that age is the last rating of the year, not its average.
+    assert series["rating"]["34"][1] == 1555.5
+    # Round-entry rates are shares of the year's entries.
+    assert series["rate_podium"]["34"][1] == 1.0
+    assert series["rate_title"]["34"][1] == 0.5
+    assert series["n_comps"]["34"][1] == 2
+
+
+def test_paths_drops_age_buckets_below_the_sample_floor(tables):
+    paths = build_site.build_paths("E", "M", tables, shard_ids={1, 2})
+
+    # Default floor is 3 and the fixture has one fencer per age: nothing to plot.
+    assert paths["tiers"]["all"]["series"]["POS"] == {}

@@ -16,7 +16,7 @@ const METRICS = [
   ["TMVAVG", "Direct-elimination victories."],
   ["Q", "Qualified from the poules into the tableau (1/0)."],
   ["PEXMPT", "Exempt from the poules — seeded straight into the tableau."],
-  ["T64+ / T96+", "Reached the table of 64 / the round feeding it."],
+  ["T64+ / TPRE64", "Reached the table of 64 / the preliminary table feeding it. (TPRE64 is what the legacy app called “T96+”, which was never FIE terminology.)"],
   ["PM1V% / PM1&2V%", "Won the first poule bout / the first two, by seed order."],
 ];
 

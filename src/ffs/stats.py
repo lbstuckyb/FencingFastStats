@@ -5,9 +5,14 @@ data (`bouts` table) instead of legacy's wide hand-scraped Excel columns.
 Column names intentionally match the legacy CSV (`data/legacy/updated_results.csv`)
 so `validate_legacy.py` can diff them directly: POS, Q, PEXMPT, PVICT, PTR,
 PTD, PIND, PT-DIFF, PMTR, PMTD, PMT-DIFF, p_tr_std, p_td_std, TTR, TTD,
-TMT-DIFF, table_tr_std, table_td_std, TMVAVG, PM1V%, PM1&2V%, T64+, T96+.
+TMT-DIFF, table_tr_std, table_td_std, TMVAVG, PM1V%, PM1&2V%, T64+, TPRE64.
 
 Deviations from legacy (see `docs/methodology.md` for the full writeup):
+
+- `TPRE64` is legacy's `T96+` renamed: "table of 96" is not FIE terminology,
+  and the quantity it actually measures is entries into the *preliminary*
+  tableau feeding the table of 64 (fie.org round code `'A64'`). None of the
+  parity metrics are affected -- `T96+` was never in `PARITY_METRICS`.
 
 - Only `status == 'ok'` bouts feed every numeric metric (byes/forfeits have
   no real score) -- this is a cleaner version of legacy's ad-hoc "D with
@@ -38,7 +43,7 @@ Deviations from legacy (see `docs/methodology.md` for the full writeup):
   pool-results summary lists a placeholder row for them (td=tr=0,
   qualified=False) despite them never appearing in any pool's actual
   fencer list -- a real archive quirk, not a parser bug).
-- T64+ / T96+ check literal FIE tableau round codes `'B64'` (round of 64)
+- T64+ / TPRE64 check literal FIE tableau round codes `'B64'` (round of 64)
   and `'A64'` (the preliminary round feeding into it) -- stable labels
   fie.org uses regardless of a competition's total bracket size (verified
   against 215- and 125-entry fixtures). A long tail of older/odd
@@ -62,7 +67,7 @@ POULE_COLS = [
     "PVICT", "PTR", "PTD", "PIND", "PT-DIFF", "PMTR", "PMTD", "PMT-DIFF",
     "p_tr_std", "p_td_std", "PEXMPT", "PM1V%", "PM1&2V%",
 ]
-DE_COLS = ["Q", "TTR", "TTD", "TMT-DIFF", "table_tr_std", "table_td_std", "TMVAVG", "T64+", "T96+"]
+DE_COLS = ["Q", "TTR", "TTD", "TMT-DIFF", "table_tr_std", "table_td_std", "TMVAVG", "T64+", "TPRE64"]
 
 
 def _explode(bouts: pd.DataFrame) -> pd.DataFrame:
@@ -171,7 +176,7 @@ def _de_stats(bouts: pd.DataFrame, results: pd.DataFrame) -> pd.DataFrame:
     ).reset_index()
     agg["TMT-DIFF"] = agg["TTD"] - agg["TTR"]
 
-    # Q / T64+ / T96+ use ANY status (bye/forfeit still count as "reached
+    # Q / T64+ / TPRE64 use ANY status (bye/forfeit still count as "reached
     # that round"), so derive from the raw (unexploded) bout rows.
     a_side = de[["competition_id", "athlete_a", "round"]].rename(columns={"athlete_a": "athlete_id"})
     b_side = de[de["athlete_b"].notna()][["competition_id", "athlete_b", "round"]].rename(columns={"athlete_b": "athlete_id"})
@@ -182,14 +187,14 @@ def _de_stats(bouts: pd.DataFrame, results: pd.DataFrame) -> pd.DataFrame:
 
     t64 = participation[participation["round"] == "B64"][["competition_id", "athlete_id"]].drop_duplicates()
     t64["T64+"] = 1
-    t96 = participation[participation["round"] == "A64"][["competition_id", "athlete_id"]].drop_duplicates()
-    t96["T96+"] = 1
+    tpre64 = participation[participation["round"] == "A64"][["competition_id", "athlete_id"]].drop_duplicates()
+    tpre64["TPRE64"] = 1
 
     out = qualified.merge(agg, on=["competition_id", "athlete_id"], how="left")
     out = out.merge(t64, on=["competition_id", "athlete_id"], how="left")
-    out = out.merge(t96, on=["competition_id", "athlete_id"], how="left")
+    out = out.merge(tpre64, on=["competition_id", "athlete_id"], how="left")
     out["T64+"] = out["T64+"].fillna(0).astype("Int64")
-    out["T96+"] = out["T96+"].fillna(0).astype("Int64")
+    out["TPRE64"] = out["TPRE64"].fillna(0).astype("Int64")
     out["TMVAVG"] = out["TMVAVG"].fillna(0)
     out["Q"] = out["Q"].astype("Int64")
 
@@ -207,7 +212,7 @@ def _de_stats(bouts: pd.DataFrame, results: pd.DataFrame) -> pd.DataFrame:
     non_qualifiers = non_qualifiers[non_qualifiers["_merge"] == "left_only"][["competition_id", "athlete_id"]].copy()
     non_qualifiers["Q"] = pd.array([0] * len(non_qualifiers), dtype="Int64")
     non_qualifiers["T64+"] = pd.array([0] * len(non_qualifiers), dtype="Int64")
-    non_qualifiers["T96+"] = pd.array([0] * len(non_qualifiers), dtype="Int64")
+    non_qualifiers["TPRE64"] = pd.array([0] * len(non_qualifiers), dtype="Int64")
 
     return pd.concat([out, non_qualifiers], ignore_index=True)
 
@@ -233,6 +238,6 @@ def compute_stats(bouts: pd.DataFrame, results: pd.DataFrame) -> pd.DataFrame:
         "competition_id", "athlete_id", "POS", "Q", "PEXMPT", "PVICT", "PTR", "PTD",
         "PIND", "PT-DIFF", "PMTR", "PMTD", "PMT-DIFF", "p_tr_std", "p_td_std",
         "TTR", "TTD", "TMT-DIFF", "table_tr_std", "table_td_std", "TMVAVG",
-        "PM1V%", "PM1&2V%", "T64+", "T96+",
+        "PM1V%", "PM1&2V%", "T64+", "TPRE64",
     ]
     return out.reindex(columns=ordered_cols)

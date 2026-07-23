@@ -38,7 +38,7 @@ contract; it's a documented interpretation, consistent across the 215- and
 One row per (competition, athlete), reproducing every metric in the legacy
 CSV (`POS, PVICT, PTR, PTD, PIND, PT-DIFF, PMTR, PMTD, PMT-DIFF, p_tr_std,
 p_td_std, TTR, TTD, TMT-DIFF, table_tr_std, table_td_std, TMVAVG, PM1V%,
-PM1&2V%, Q, PEXMPT, T64+, T96+`) computed from bout-level data instead of
+PM1&2V%, Q, PEXMPT, T64+, TPRE64`) computed from bout-level data instead of
 legacy's wide hand-scraped Excel columns.
 
 Poule-derived metrics are `NaN` for an entire competition when fie.org's own
@@ -76,7 +76,7 @@ there (`PEXMPT=1` marks "no poule bouts", see below).
 - **`Q` (qualified into the tableau) is `0`, not `NaN`, for non-qualifiers.**
   An athlete who competed in a DE-having competition but never appears in
   any DE bout (eliminated in poules, or otherwise never reached the
-  tableau) gets an explicit `Q=0` / `T64+=0` / `T96+=0` row, matching
+  tableau) gets an explicit `Q=0` / `T64+=0` / `TPRE64=0` row, matching
   legacy's explicit-zero semantics, rather than being silently dropped and
   turning into `NaN` after the left-merge in `compute_stats`.
 - **`PEXMPT`** ("exempt from poules") is derived directly from bout
@@ -92,12 +92,16 @@ there (`PEXMPT=1` marks "no poule bouts", see below).
   between `tr_poules/p_matches` and a row-mean was itself an artifact of
   asymmetric no-show filtering, which the `status` filter above already
   resolves.
-- **`T64+`/`T96+`** check the literal FIE tableau round codes `'B64'`
-  (round of 64) and `'A64'` (the round feeding into it) — stable regardless
+- **`T64+`/`TPRE64`** check the literal FIE tableau round codes `'B64'`
+  (round of 64) and `'A64'` (the preliminary round feeding into it) — stable regardless
   of a competition's bracket size, verified against both fixtures. A long
   tail of older/odd competitions uses other round-code conventions
   (`'F64'`, `'PD1'`, plain digits, ...) that these flags don't recognize —
   a known, accepted gap, not in the mandatory parity list.
+  `TPRE64` is legacy's `T96+` renamed: "table of 96" is not FIE
+  terminology, and what the flag actually measures is entries into the
+  preliminary tableau. `T64+` keeps its name — that one is the real
+  table of 64. The rename touches no parity metric.
 - **`PM1V%`/`PM1&2V%`** ("won pool match 1" / "matches 1 and 2") approximate
   legacy's match-number columns, which were themselves derived from a fixed
   historical FIE pool pairing schedule (hardcoded per seed-count in the
