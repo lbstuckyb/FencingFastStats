@@ -1,51 +1,57 @@
 # Handoff — start of next session
 
-**State: M6.5 is DONE and committed. M6.6 (ratings explainer + the Metrics
-Explorer page) is next — one milestone per session, so M6.6 is the whole job.**
+**State: M6.6 is DONE and committed. M6.7 (profile metric chart + per-season
+table + H2H metric comparison + the `#/compare` route) is next — one milestone
+per session, so M6.7 is the whole job.**
 
-M6 shipped a complete site, then a review against the legacy Dash app found
-three of its analytical features had never been carried over. M6.5–M6.8 bring
-them back. The plan for all four is
-`~/.claude/plans/it-looks-good-but-sprightly-snail.md` — **read its M6.6
-section before starting.**
+M6 shipped a complete site; a review against the legacy Dash app found three of
+its analytical features had never been carried over. M6.5 built the data layer,
+M6.6 the explorer and the ratings explainer. The plan for all four is
+`~/.claude/plans/it-looks-good-but-sprightly-snail.md` — **read its M6.7 section
+before starting.**
 
 ## Read first
 
-1. That plan file's `## M6.6` section (the actual spec for this session).
-2. `PLAN.md` → `## Progress Log` → the M6.5 entry (what the new data layer
-   holds and why it is shaped that way).
-3. `src/ffs/metrics.py` — the metric registry. Everything M6.6 renders is
-   driven by it, via `meta.json`.
+1. That plan file's `## M6.7` section (the actual spec for this session).
+2. `PLAN.md` → `## Progress Log` → the M6.5 and M6.6 entries.
+3. `site/js/metrics.js` — the registry reader every metric view goes through
+   (formatting, sort direction, explorer-row aggregation). Do not re-derive
+   labels, aggregations or sort directions anywhere else.
 
-## What M6.5 left you
+## What M6.6 left you
 
-- **`meta.json`** (7.3 KB, eager) now carries `metrics` (23 `Metric` records:
-  `code, label, short, group, agg, better, fmt, den, blurb`), `groups`,
-  `counts`, `path_series`, `level_groups`, `default_level_groups`
-  (`["WC","GP"]`) and `cohort_tiers`. **No view should hardcode a metric
-  label, aggregation or sort direction** — read them from here.
-- **`data/explore/{pool}.json`** (lazy, 2.2–4.5 MB): rows of
-  `[athlete_id, season, level_group_index, ...8 counts, ...23 metric sums]`.
-  To aggregate: sum the rows the filters select, then for a `mean` metric
-  divide by the summed count named by that metric's `den`; a `sum` metric
-  needs no division. Join names/countries from `fencers/index.json`.
-- **`data/paths/{pool}.json`** (lazy, ~95 KB) — M6.8's input, not M6.6's.
-- Fencer shards carry all 23 metrics as a fixed-order `"m"` array keyed by
-  `meta.metrics`; `site/js/views/fencer.js`'s `metricReader` is the pattern to
-  copy. Career blocks now have `peak_rating` and `peak_pool_rank`.
-- `T96+` is now `TPRE64` everywhere outside `legacy/`.
+- **`#/explore`** (`site/js/views/explore.js`) is the worked example of
+  registry-driven rendering: metric columns, their headers, their formats and
+  their sort directions all come from `meta.json`. Its selection bar already
+  tracks picked fencer ids — that is the state M6.7's `#/compare?ids=…` route
+  is meant to consume. (M6.6 deliberately did not link to `#/compare` yet,
+  since the route did not exist; the bar offers head-to-head for two picks.)
+- **Aggregation rule, everywhere**: divide a metric's sum by the count named by
+  its `den`, never by the number of competitions entered. The per-season table
+  M6.7 builds from a shard has to do the same thing the explorer does over
+  `explore/*.json` — a fencer's poule columns rest on fewer competitions than
+  their placings do.
+- **`#/methodology?s={id}`** deep-links into a section (`rating`, `glossary`,
+  `source`, `bouts`, `h2h`, `limits`). New views that show a rating or a metric
+  should link there rather than re-explaining.
+- **Data fix**: fie.org's no-ranking sentinels (`final_rank` 999/9999, 1,463
+  rows) are now nulled at parse, in `stats.compute_stats` and in
+  `build_site._load_tables` (`schema.RANK_SENTINEL_MIN`). Canonical parquet and
+  `site/data/` were rebuilt on 2026-07-23, so shards are already clean. `ffs
+  validate`: 286/286 matched, parity 99.3%, POS 100.0%.
 
 ## State of the repo
 
-- Seven routes work and are verified: `#/`, `#/search`, `#/fencer/{id}`,
-  `#/competitions`, `#/competition/{id}`, `#/h2h?a=&b=`, `#/methodology`.
+- Eight routes work and are verified: `#/`, `#/search`, `#/fencer/{id}`,
+  `#/competitions`, `#/competition/{id}`, `#/h2h?a=&b=`, `#/explore?pool=`,
+  `#/methodology`.
 - `site/data/` is gitignored. Rebuild with `.venv/bin/ffs build-site` (~23 min,
   162 MB, 22k files); it is a pure function of `data/canonical/*.parquet`.
-  **M6.6 needs no rebuild** — it is UI over artifacts that already exist.
+  **M6.7 needs no rebuild** — it is UI over the shards.
 - `.github/workflows/pages.yml` builds `site/data/` in CI. **Pages has never
   been enabled and master has never been pushed** — both need the user's
   go-ahead.
-- `pytest`: 86/86 green.
+- `pytest`: 88/88 green.
 
 ## Verifying the site without a browser extension
 
@@ -70,6 +76,8 @@ zero console errors or unhandled rejections, and
 `documentElement.scrollWidth <= viewport`.
 
 Spot-check names: RODRIGUEZ John Edison (21208, the profile the gaps were found
-on), Errigo–Kiefer (`#/h2h?a=9377&b=21717`, 14 meetings), KANO Koki (34385).
+on), Errigo–Kiefer (`#/h2h?a=9377&b=21717`, 14 meetings), KANO Koki (34385),
+LIMARDO GASCON Ruben (10222 — the profile that exposed the rank sentinel; his
+mean World Cup/GP placing should now read ~20, not 218).
 
-⛔ Reminder: one milestone per session — stop at M6.6's commit.
+⛔ Reminder: one milestone per session — stop at M6.7's commit.

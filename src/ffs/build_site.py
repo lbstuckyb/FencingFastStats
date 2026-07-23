@@ -60,6 +60,7 @@ from pathlib import Path
 import pandas as pd
 
 from ffs import metrics as metrics_registry
+from ffs import schema
 
 CANONICAL_DIR = Path("data/canonical")
 SITE_DATA_DIR = Path("site/data")
@@ -134,6 +135,9 @@ def _load_tables() -> dict[str, pd.DataFrame]:
         "ratings_history", "h2h",
     ]
     tables = {name: pd.read_parquet(CANONICAL_DIR / f"{name}.parquet") for name in names}
+    # fie.org's no-ranking sentinels would otherwise print as "#9999" in a
+    # competition's results table (see schema.RANK_SENTINEL_MIN).
+    tables["results"] = schema.clean_final_rank(tables["results"])
     # A few hundred fie.org athlete names carry leading/trailing whitespace,
     # which otherwise sorts them ahead of everything in the search index.
     tables["athletes"]["name"] = tables["athletes"]["name"].str.strip()

@@ -301,12 +301,61 @@ details.table-view summary { cursor: pointer; color: var(--text-secondary); font
 .h2h-count.lead { color: var(--text-primary); }
 .h2h-dash { color: var(--text-muted); }
 
+/* ---------- metrics explorer ---------- */
+
+.chip-block { margin-bottom: .25rem; }
+.chip-block .pool-filter { margin: .25rem 0 .75rem; }
+.num-input { width: 6.5rem; }
+
+.explore-table { font-variant-numeric: tabular-nums; }
+/* The name column stays put while the 23 metric columns scroll past it —
+   without it a row's numbers are unattributable two screens to the right. */
+.explore-table .col-pick, .explore-table .col-name {
+  position: sticky; background: var(--surface-1); z-index: 1;
+}
+.explore-table .col-pick { left: 0; width: 1.75rem; padding-right: 0; }
+.explore-table .col-name { left: 1.75rem; white-space: nowrap; }
+.explore-table tbody th.col-name {
+  font-weight: 500; text-transform: none; letter-spacing: 0;
+  font-size: .875rem; color: var(--text-primary);
+}
+.explore-table tbody tr:hover .col-name, .explore-table tbody tr:hover .col-pick {
+  background: var(--surface-2);
+}
+
+.th-sort {
+  font: inherit; color: inherit; letter-spacing: inherit; text-transform: inherit;
+  background: none; border: none; padding: 0; cursor: pointer; white-space: nowrap;
+}
+.th-sort:hover { color: var(--text-primary); }
+th.num .th-sort { width: 100%; text-align: right; }
+
+.selection-bar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: .75rem; }
+.pick-tag { display: inline-flex; align-items: center; gap: .35rem; }
+.pick-drop {
+  font: inherit; line-height: 1; background: none; border: none; padding: 0;
+  color: var(--text-muted); cursor: pointer;
+}
+.pick-drop:hover { color: var(--text-primary); }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
+
 /* ---------- prose ---------- */
 
 /* Running text gets a readable measure; the metrics table stays full width. */
 .prose > p, .prose > ul { max-width: 72ch; }
 .prose ul { margin: 0 0 .75rem; padding-left: 1.1rem; }
 .prose li { margin-bottom: .35rem; }
+.prose h3 { margin: 1rem 0 .35rem; color: var(--text-secondary); }
+.callout {
+  border-left: 3px solid var(--series-1);
+  background: var(--surface-2);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: .6rem .75rem;
+}
 .prose code {
   font-size: .8125rem; background: var(--surface-2);
   border-radius: 4px; padding: .05rem .3rem;

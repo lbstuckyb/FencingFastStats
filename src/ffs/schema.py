@@ -59,6 +59,15 @@ RESULTS_DTYPES: dict[str, str] = {
     "points": "Float64",
 }
 
+# fie.org marks an entrant with no final ranking -- withdrawn, did not start,
+# or simply never placed -- with a sentinel rank rather than an empty field.
+# Both `999` and `9999` occur; the largest genuine senior individual field on
+# record is under 400, so anything at or above this is a marker, not a place.
+# Left as-is these poison every average of `POS` (a fencer with three
+# withdrawals in 159 entries averaged a "place" of 218), so they are nulled at
+# the boundary: on parse, and again on read for parquet written before this.
+RANK_SENTINEL_MIN = 999
+
 BOUTS_DTYPES: dict[str, str] = {
     "competition_id": "string",
     "phase": "string",
@@ -90,6 +99,17 @@ def coerce_dtypes(name: str, df: pd.DataFrame) -> pd.DataFrame:
     dtypes = TABLE_DTYPES[name]
     df = df.reindex(columns=list(dtypes))
     return df.astype(dtypes)
+
+
+def clean_final_rank(results: pd.DataFrame) -> pd.DataFrame:
+    """Replace fie.org's no-ranking sentinels (see `RANK_SENTINEL_MIN`) with
+    NA, so a withdrawal is missing data rather than a 9999th place. Returns a
+    copy; a `results` frame without the column passes through unchanged."""
+    if results.empty or "final_rank" not in results.columns:
+        return results
+    out = results.copy()
+    out.loc[out["final_rank"] >= RANK_SENTINEL_MIN, "final_rank"] = pd.NA
+    return out
 
 
 def validate_tables(tables: dict[str, pd.DataFrame]) -> list[str]:

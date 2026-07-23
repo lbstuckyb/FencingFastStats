@@ -120,7 +120,9 @@ def parse_competition(
                 "points": item.get("points"),
             }
         )
-    results_df = schema.coerce_dtypes("results", pd.DataFrame(results_rows))
+    results_df = schema.clean_final_rank(
+        schema.coerce_dtypes("results", pd.DataFrame(results_rows))
+    )
 
     athletes_df = schema.coerce_dtypes(
         "athletes",

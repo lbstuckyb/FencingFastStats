@@ -159,3 +159,29 @@ def test_forfeit_bouts_excluded_from_poule_numeric_stats():
         if col == "PEXMPT":
             continue
         assert out[col].isna().all()
+
+
+def test_no_ranking_sentinel_becomes_null_pos():
+    # fie.org marks a withdrawal / no-show with rank 999 or 9999 rather than
+    # an empty field; averaged as a placing it is catastrophic, so POS has to
+    # come out missing (see schema.RANK_SENTINEL_MIN).
+    bouts = pd.DataFrame(
+        [
+            {"competition_id": "c1", "phase": "poule", "round": "poule", "poule_no": 1,
+             "bout_order": 2, "athlete_a": 1, "athlete_b": 2, "score_a": 5, "score_b": 1,
+             "winner": 1, "status": "ok"},
+        ]
+    )
+    results = pd.DataFrame(
+        [
+            {"competition_id": "c1", "athlete_id": 1, "final_rank": 1},
+            {"competition_id": "c1", "athlete_id": 2, "final_rank": 999},
+            {"competition_id": "c1", "athlete_id": 3, "final_rank": 9999},
+        ]
+    )
+    out = stats.compute_stats(bouts, results).set_index("athlete_id")
+    assert out.loc[1, "POS"] == 1
+    assert pd.isna(out.loc[2, "POS"])
+    assert pd.isna(out.loc[3, "POS"])
+    # The rows themselves stay: the fencer did enter the competition.
+    assert len(out) == 3

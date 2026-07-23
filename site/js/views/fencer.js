@@ -83,7 +83,10 @@ function ratingCard(f) {
 
   const card = el("section", { class: "card" }, [
     el("h2", { text: "Rating over time" }),
-    el("p", { class: "small muted", text: "Elo rating after every competition on record." }),
+    el("p", { class: "small muted" }, [
+      "Elo rating after every competition on record — computed by this site from bout results. It is not an FIE ranking. ",
+      el("a", { href: "#/methodology?s=rating", text: "How it works →" }),
+    ]),
   ]);
 
   if (weapons.length > 1) {

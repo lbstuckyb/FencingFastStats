@@ -63,6 +63,8 @@ from __future__ import annotations
 
 import pandas as pd
 
+from ffs import schema
+
 POULE_COLS = [
     "PVICT", "PTR", "PTD", "PIND", "PT-DIFF", "PMTR", "PMTD", "PMT-DIFF",
     "p_tr_std", "p_td_std", "PEXMPT", "PM1V%", "PM1&2V%",
@@ -222,7 +224,11 @@ def compute_stats(bouts: pd.DataFrame, results: pd.DataFrame) -> pd.DataFrame:
     has (POS/points from `results`) plus every poule/DE-derived metric
     (NaN where fie.org has no bout data for that phase/competition/athlete —
     see module docstring)."""
-    base = results[["competition_id", "athlete_id", "final_rank"]].rename(columns={"final_rank": "POS"})
+    # `clean_final_rank` again here, not only in the parser: canonical parquet
+    # written before the sentinels were understood still carries them.
+    base = schema.clean_final_rank(results)[
+        ["competition_id", "athlete_id", "final_rank"]
+    ].rename(columns={"final_rank": "POS"})
 
     poule = _poule_stats(bouts, results)
     de = _de_stats(bouts, results)

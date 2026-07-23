@@ -78,3 +78,24 @@ def test_validate_tables_flags_bad_final_rank():
     tables["results"].loc[0, "final_rank"] = 0
     issues = schema.validate_tables(tables)
     assert any("final_rank < 1" in i for i in issues)
+
+
+def test_clean_final_rank_nulls_sentinels_only():
+    results = schema.coerce_dtypes(
+        "results",
+        pd.DataFrame([
+            {"competition_id": "2025-1", "athlete_id": 1, "final_rank": 1,
+             "seed": None, "exempt": False, "points": 0.0},
+            {"competition_id": "2025-1", "athlete_id": 2, "final_rank": 369,
+             "seed": None, "exempt": False, "points": 0.0},
+            {"competition_id": "2025-1", "athlete_id": 3, "final_rank": 999,
+             "seed": None, "exempt": False, "points": 0.0},
+            {"competition_id": "2025-1", "athlete_id": 4, "final_rank": 9999,
+             "seed": None, "exempt": False, "points": 0.0},
+        ]),
+    )
+    cleaned = schema.clean_final_rank(results)
+    assert cleaned["final_rank"].tolist()[:2] == [1, 369]
+    assert cleaned["final_rank"].isna().tolist() == [False, False, True, True]
+    # The input frame is left alone -- callers pass canonical tables around.
+    assert results["final_rank"].notna().all()

@@ -111,7 +111,32 @@ there (`PEXMPT=1` marks "no poule bouts", see below).
   proxy, not a verified bit-exact port. Excluded from the mandatory parity
   list.
 
+### Metric registry (`src/ffs/metrics.py`)
+
+Each metric's human-readable label, column group, aggregation (`mean`/`sum`),
+better-direction, display format, and one-line definition live in one
+`Metric` record. The registry is serialized into `site/data/meta.json`, so
+the site's methodology glossary, the metrics explorer's column headers and
+its sort directions are all generated from it — a metric cannot be described
+on the site differently from how it is computed here.
+
+`Metric.den` names the *population* a mean is taken over. Metrics have
+genuinely different denominators (a fencer's 40 results may hold 40 `POS`
+values but only 12 `PVICT` and 9 `TTR`, because pre-~2016 competitions carry
+no bout data), so any re-aggregation — the explorer's, and every per-season
+or career total on the site — divides each metric's sum by the count of
+competitions that actually carry it, never by the number of competitions
+entered.
+
 ## Elo ratings (`src/ffs/elo.py`)
+
+**These ratings are not an FIE ranking.** The FIE's official ranking points
+are not in this dataset and were never scraped; there is no public archive
+of historical rankings to derive them from. The legacy app did display an
+official ranking, read from a separately maintained spreadsheet
+(`data/legacy/`), and that column has no equivalent here. Everything this
+site calls a "rating" is the Elo score below, computed from bout results
+alone, and every view that shows one says so.
 
 Standard Elo per (weapon, gender) pool, with full history:
 `R' = R + K * (actual - expected)`, `expected = 1 / (1 + 10**((Ropp - R) / 400))`.

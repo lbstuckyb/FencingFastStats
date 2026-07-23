@@ -91,7 +91,7 @@ Small eager bundle + lazy shards via relative `fetch()` (GitHub Pages-safe):
 
 ## Static site pages (`site/`)
 
-Home (pool selector, ELO top-20, recent comps, leaderboards) · Fencer search (client-side over index.json) · Fencer profile (**rating timeline chart**, career table, per-comp results, H2H list) · H2H explorer (two fencers → aggregate card + bout list) · Competition browser + detail (results, poule grids, DE bracket) · Methodology (metric + ELO definitions, data attribution). Deploy via `.github/workflows/pages.yml` (`upload-pages-artifact` on `site/`).
+Home (pool selector, ELO top-20, recent comps, leaderboards) · Fencer search (client-side over index.json) · Fencer profile (**rating timeline chart**, career table, per-comp results, H2H list) · H2H explorer (two fencers → aggregate card + bout list) · Competition browser + detail (results, poule grids, DE bracket) · Metrics explorer (every metric per fencer, filtered by season/level, sortable — added in M6.6) · Methodology (metric + ELO definitions, data attribution). Deploy via `.github/workflows/pages.yml` (`upload-pages-artifact` on `site/`).
 
 ## Docs deliverables
 
@@ -327,7 +327,47 @@ Home (pool selector, ELO top-20, recent comps, leaderboards) · Fencer search (c
     same values the shard holds. `pytest`: **86/86 green** (77 + 9 new: registry round-trip,
     level-group coverage, explorer row keying/sums/counts/pruning, peak-rating ranks, cohort
     membership, by-age distributions, sample floor).
-- [ ] M6.6 — Ratings explainer + Metrics Explorer page
+- [x] M6.6 — Ratings explainer + Metrics Explorer page (this session, 2026-07-23)
+  - **New route `#/explore?pool=&…`** (`site/js/views/explore.js`, nav entry "Metrics"): legacy's
+    `update_table_ind` DataTable rebuilt over `explore/{pool}.json`. Pool chips, season range,
+    level-group chips, country, min-competitions and name filters; sortable on every column
+    (click, shift-click to add a tie-breaker) with the first direction taken from the registry's
+    `better`; column-group toggles (overall / poules / DE); sticky name column inside
+    `.table-scroll`; row checkboxes with a selection bar. All filter state round-trips through
+    the hash via `history.replaceState`, so a view is linkable without pushing history entries.
+  - **New `site/js/metrics.js`** — the shared registry reader (formatting per `fmt`, initial sort
+    direction per `better`, and the explorer-row aggregation). M6.7/M6.8 read metrics through it
+    rather than re-deriving any of that.
+  - Aggregation is the whole trick and it lives here: sum the rows the filters select, then
+    divide each metric's sum by the count named by its `den` — never by the number of
+    competitions entered. 1,579 men's épée fencers pass the default filters (WC+GP, ≥5 comps)
+    and re-aggregate in a few ms per keystroke.
+  - **Ratings explainer**: `docs/methodology.md`'s Elo section now opens with an explicit "these
+    ratings are not an FIE ranking" statement (the FIE's points were never scraped; legacy read
+    them from a spreadsheet that has no equivalent here), and gains a `metrics.py` registry
+    section explaining `den`. `site/js/views/methodology.js` mirrors it: a rewritten rating
+    section with the formula, all four constants and the ordering caveat, plus a metric glossary
+    **generated from `meta.json`'s registry** rather than a hand-kept list — a metric can no
+    longer be described differently from how it is computed. Sections are deep-linkable
+    (`#/methodology?s=rating`, `?s=glossary`); the profile's rating card and the explorer link in.
+  - **Data bug found by the new table and fixed (needed a rebuild).** fie.org marks an entrant
+    with no final ranking (withdrawn / did not start) with a sentinel `final_rank` of `999` or
+    `9999`, and 1,463 of 259,894 stats rows carried one as a real placing. Averaged, it wrecks
+    `POS`: LIMARDO GASCON Ruben showed a mean place of **218** over 159 World Cup/GP entries
+    (median 20) because three of them were 9999s. The legacy CSV has no such values, so nulling
+    them is also the legacy-faithful choice. `schema.RANK_SENTINEL_MIN` + `schema.clean_final_rank`
+    now null them at three boundaries: on parse (future scrapes), in `stats.compute_stats` (parquet
+    written before this was understood) and in `build_site._load_tables` (so a competition's
+    results table can't print "#9999"). `ffs validate` re-run: **286/286 matched, parity 99.3%
+    unchanged** (POS still 100.0%). Rebuilt `build-stats` (4m) → `build-site` (~23m).
+  - Verified headlessly at 375px and 1280px in both themes (`#/explore` for two pools,
+    `#/methodology`, `#/methodology?s=rating`, RODRIGUEZ John Edison's profile): zero console
+    errors or unhandled rejections, `scrollWidth <= viewport` everywhere. `pytest`: **88/88
+    green** (86 + the sentinel tests in `test_stats.py` / `test_schema.py`).
+  - Deviation from the plan: the "Compare selected" action was to point at `#/compare?ids=…`,
+    which M6.7 builds. Rather than ship a link to a 404, the selection bar shows the picked
+    fencers and offers head-to-head when exactly two are selected; M6.7 swaps in the compare
+    route using the same selection state.
 - [ ] M6.7 — Profile metric chart, per-season table, H2H metric comparison
 - [ ] M6.8 — Trajectories page + polish and verification
 - [ ] M7 — Proposal + backlog docs
