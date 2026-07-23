@@ -91,7 +91,7 @@ Small eager bundle + lazy shards via relative `fetch()` (GitHub Pages-safe):
 
 ## Static site pages (`site/`)
 
-Home (pool selector, ELO top-20, recent comps, leaderboards) · Fencer search (client-side over index.json) · Fencer profile (**rating timeline chart**, career table, per-comp results, H2H list) · H2H explorer (two fencers → aggregate card + bout list) · Competition browser + detail (results, poule grids, DE bracket) · Metrics explorer (every metric per fencer, filtered by season/level, sortable — added in M6.6) · Methodology (metric + ELO definitions, data attribution). Deploy via `.github/workflows/pages.yml` (`upload-pages-artifact` on `site/`).
+Home (pool selector, ELO top-20, recent comps, leaderboards) · Fencer search (client-side over index.json) · Fencer profile (**rating timeline chart**, career table, per-comp results, H2H list) · H2H explorer (two fencers → aggregate card + bout list) · Competition browser + detail (results, poule grids, DE bracket) · Metrics explorer (every metric per fencer, filtered by season/level, sortable — added in M6.6) · Compare (up to six fencers' metrics over time, side by side — M6.7) · Trajectories (cohort median + p25–p75 band by age, with fencers overlaid — M6.8) · Methodology (metric + ELO definitions, data attribution). Deploy via `.github/workflows/pages.yml` (`upload-pages-artifact` on `site/`).
 
 ## Docs deliverables
 
@@ -416,5 +416,55 @@ Home (pool selector, ELO top-20, recent comps, leaderboards) · Fencer search (c
     (60) would have read 27%.
   - `pytest`: **88/88 green** (unchanged — this milestone added no Python; the site has no JS
     test harness, so verification is the headless-Chrome acceptance run above).
-- [ ] M6.8 — Trajectories page + polish and verification
+- [x] M6.8 — Trajectories page + polish and close-out (this session, 2026-07-23)
+  - Pure UI again: no rebuild, no new data artifact. `paths/{pool}.json` was generated back in
+    M6.5 and is read as-is.
+  - **New route `#/paths?pool=&tier=&metric=&ids=`** (`site/js/views/paths.js`, nav entry
+    "Trajectories"), the merged and generalised form of legacy's `rank-graph` +
+    `fieresults-graph`: pool chips, cohort tier chips (Top 10 / 32 / 100 / all), a series picker
+    over the 23 registry metrics **plus** the six `path_series` extras (rating, comps entered,
+    T64+/TPRE64/podium/title rates), and up to five overlaid fencers through the shared
+    `picker.js`. Every control round-trips through the hash with `replaceState`.
+  - **Cohort curve = median with a p25–p75 band**, an improvement on legacy's bare mean: the
+    band is what makes "on track" legible. The mean, the quartiles and `n` ride the median's
+    tooltip and the table view. The caption on the page — and a new deep-linkable
+    `#/methodology?s=cohorts` section, mirrored in `docs/methodology.md` — say that a cohort is
+    a **peak FencingFastStats rating** rank, never an FIE ranking, and that a fencer's curve
+    only reflects what fie.org's archive holds.
+  - **An overlaid fencer's own curve is computed client-side** from their shard by the rule the
+    cohort was built with: one value per (fencer, age), age = calendar year − birth year, means
+    through `metrics.aggregateResults` (so the denominator is the population that carries the
+    metric), rating from the `rating_timeline`'s last point of that year, and the four rates as
+    the share of that year's entries. `cohort_ids` is used to mark a fencer who is himself part
+    of the curve he is being compared against; a fencer with nothing in the selected pool is
+    named, with the pools they do fence, instead of silently missing a line.
+  - **Chart work** (dataviz skill invoked first; three bugs, all invisible in the DOM and all
+    found by looking at rendered PNGs):
+    - The band was first built as two stacked lines — the standard recipe, and **wrong on a
+      cartesian value/value axis**: ECharts stacks the *x* dimension too, which folded the band
+      onto the baseline and doubled the x extent (ages ran to 72). It is now a `custom` series
+      drawing one polygon, with the quantiles still declared through `encode` so both count
+      towards the axis extents.
+    - The horizontal legend wraps but never tells the grid, so at 375px its second row landed on
+      the top y tick. `grid.top` now follows an estimated legend row count, and `mount()` passes
+      the container width into the option builder and rebuilds on a real width change — this
+      fixed the same latent bug on `#/compare` with five or more series.
+    - `containLabel` reserves room for tick labels but not for an axis *name*, so the new "Age"
+      axis label needed its own bottom inset.
+  - **`.select` had no `max-width`**, so a wordy option label ("Share of entries reaching the
+    preliminary table") pushed the whole page 57px wider than a 375px screen — the first
+    horizontal overflow the site has had. Fixed in `style.css` for every select.
+  - Cross-links added: the profile's compare card → `#/paths?pool=…&ids={id}`, and the home
+    page's rating-leaders card → the pool's trajectories.
+  - **Close-out**: `README.md` rewritten with the page-by-page feature list and the real CLI
+    workflow (it still said "Currently a stub"); `docs/methodology.md` gained the trajectories
+    section. `T96+` survives outside `legacy/` only in prose *about* the rename (`stats.py`,
+    `metrics.py`'s blurb, `docs/methodology.md`, this file) — never as a live metric name.
+  - Verified headlessly at 375px and 1000–1280px in both themes across six route variants, plus
+    a scripted interaction pass (pool switch → tier switch → metric change → drop a fencer →
+    open the table view): **zero console errors or unhandled rejections, `scrollWidth <=
+    viewport` everywhere**, and `#/explore`, `#/compare` and `#/fencer` re-checked for
+    regressions. Spot-check against the source: KANO Koki's rating at age 27 is 2014.3 and the
+    men's épée top-10 median at 27 is 1964.6 — both exactly as plotted.
+  - `pytest`: **88/88 green** (no Python changed this milestone).
 - [ ] M7 — Proposal + backlog docs

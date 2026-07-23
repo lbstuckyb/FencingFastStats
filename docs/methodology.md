@@ -176,6 +176,35 @@ the underlying bout row.
   win counts and `last_met`. Touch sums (`td_lo`/`td_hi`) are computed only
   over `status == 'ok'` bouts, since forfeits carry no real score.
 
+## Career trajectories (`build_site.build_paths`)
+
+`site/data/paths/{weapon}{gender}.json` holds, per cohort tier and per series,
+the by-age distribution across the cohort: `{age: [n, mean, p25, p50, p75]}`
+over ages 12–45. The trajectories page draws the median as a line and p25–p75
+as a band; legacy's `rank-graph` drew a bare mean, which cannot show how wide
+the path is.
+
+- **A cohort is defined by peak FencingFastStats rating**, not by any FIE
+  ranking: `top10` is every profiled fencer whose peak rating ever placed them
+  in the top 10 of their (weapon, gender) pool. The FIE's own points are not in
+  this dataset, so there is no official ranking available to build a cohort
+  from — every label must say whose measure it is.
+- **Age** is the competition's calendar year minus the athlete's birth year
+  (`_rating_by_age` uses the same definition), so an "age" is a calendar year of
+  results rather than a season.
+- **One value per (athlete, age)** enters the distribution: mean-aggregated
+  metrics are averaged over that year's competitions and summed metrics totalled,
+  and only then is the distribution taken across the cohort. A fencer with twenty
+  entries that year weighs the same as one with three.
+- Ages with fewer than `MIN_COHORT_AGE_SAMPLE` (3) fencers are omitted rather
+  than published as the spike of a single career.
+- Beyond the metric registry the file carries `PATH_EXTRA_SERIES`: the rating
+  itself (the last rating carried away from a competition that year), the number
+  of competitions entered, and the share of entries reaching the table of 64,
+  the preliminary table, the podium and the title.
+- `cohort_ids` lists each tier's members so the page can mark an overlaid fencer
+  who is himself part of the curve he is being compared against.
+
 ## Validation against legacy data
 
 `ffs validate` (`src/ffs/validate_legacy.py`) runs two checks:

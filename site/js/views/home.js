@@ -32,6 +32,8 @@ function eloCard(summary) {
     ])
   );
 
+  const pool = `${summary.weapon.toLowerCase()}${summary.gender.toLowerCase()}`;
+
   return el("section", { class: "card" }, [
     el("h2", { text: "Rating leaders" }),
     el("p", { class: "small muted", text: "Elo rating from every international bout on record." }),
@@ -47,6 +49,9 @@ function eloCard(summary) {
         ]),
         el("tbody", {}, rows),
       ]),
+    ]),
+    el("p", { class: "small" }, [
+      el("a", { href: `#/paths?pool=${pool}`, text: "How careers like these develop with age →" }),
     ]),
   ]);
 }

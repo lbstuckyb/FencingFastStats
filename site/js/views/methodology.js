@@ -97,6 +97,19 @@ export async function render({ params }) {
       section("h2h", "Head-to-head", [
         p("Two fencers' record covers every recorded meeting in senior individual competition, poules and tableau alike, within a weapon. Bout-by-bout detail is generated for pairs who have met at least five times; the overall record is available for any pair."),
       ]),
+      section("cohorts", "Career trajectories and cohorts", [
+        p("The trajectories page plots a metric against a fencer's age: for every age, the median across a cohort of fencers, with a band covering the middle half of them (the 25th to the 75th percentile). The mean is in the tooltip and the table, but the median and the band are what the chart draws — a single mean cannot show how wide the path to the top actually is."),
+        el("p", { class: "callout" }, [
+          el("strong", { text: "A cohort is defined by this site's own rating, not by an FIE ranking." }),
+          " The “top 10” cohort is every fencer whose peak FencingFastStats rating ever placed them in the top 10 of their weapon-and-gender pool. Since the FIE's official points are not part of this dataset, there is no official ranking here to draw a cohort from.",
+        ]),
+        el("ul", {}, [
+          el("li", { text: "Age is the calendar year of the competition minus the fencer's birth year, so one age covers one calendar year of results rather than a season." }),
+          el("li", { text: "One value per fencer per age goes into the distribution, so a fencer who entered twenty competitions that year counts once, exactly like one who entered three." }),
+          el("li", { text: "Ages with fewer than three fencers on record are left out rather than drawn as the spike of a single career." }),
+          el("li", { text: "A fencer's own curve reflects only the competitions fie.org's archive holds for them: a gap in the archive reads as a gap in the career." }),
+        ]),
+      ]),
       section("limits", "Known limits", [
         el("ul", {}, [
           el("li", { text: "Senior individual events only — no team, junior, cadet or veteran results." }),

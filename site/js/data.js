@@ -23,6 +23,8 @@ export const getFencer = (id) => getJSON(`data/fencers/${Number(id) % 100}/${Num
 export const getCompetitionsIndex = () => getJSON("data/competitions/index.json");
 // Lazy, page-scoped: 2–4.5 MB per pool, fetched only by the metrics explorer.
 export const getExplore = (pool) => getJSON(`data/explore/${pool}.json`);
+// Likewise page-scoped, but small (~95 kB): the trajectories page's cohort curves.
+export const getPaths = (pool) => getJSON(`data/paths/${pool}.json`);
 export const getCompetition = (id) => getJSON(`data/competitions/${id}.json`);
 
 // Pair files exist only for >=5 meetings (see build_site.py); `null` means

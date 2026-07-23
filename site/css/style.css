@@ -237,6 +237,9 @@ details.table-view summary { cursor: pointer; color: var(--text-secondary); font
 .filter-row .grow { flex: 1 1 260px; min-width: 0; }
 .select {
   font: inherit; margin: .25rem 0 1rem; padding: .6rem .5rem;
+  /* A <select> is sized by its longest option, so a wordy metric label would
+     otherwise push the whole page wider than a phone screen. */
+  max-width: 100%;
   background: var(--surface-1); color: var(--text-primary);
   border: 1px solid var(--border-strong); border-radius: var(--radius);
 }

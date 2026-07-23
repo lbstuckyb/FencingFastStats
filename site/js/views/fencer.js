@@ -2,7 +2,7 @@
 // chart, season-by-season metrics, full results history and top rivals, from
 // data/fencers/{id%100}/{id}.json.
 
-import { getFencer, getMeta, weaponName } from "../data.js";
+import { getFencer, getMeta, poolCodeOf, weaponName } from "../data.js";
 import { metricSection, metricState, seasonTable } from "../metricview.js";
 import { fencerPicker, fencerSearchIndex } from "../picker.js";
 import { el, fencerLink, fmtDate, fmtInt, fmtNum, seasonOf } from "../util.js";
@@ -271,6 +271,19 @@ async function compareCard(f) {
     el("h2", { text: "Compare with another fencer" }),
     el("p", { class: "small muted", text: "Put a second fencer's metrics beside these — same chart, same filters, side-by-side table." }),
   ]);
+  // The other way of putting a career in context: against a cohort by age.
+  // The shard carries gender only on its results, so the pool comes from the
+  // fencer's main weapon and the first result fenced in it.
+  const weapon = f.career?.[0]?.weapon;
+  const gender = (f.results ?? []).find((r) => r.weapon === weapon)?.gender;
+  if (weapon && gender) {
+    card.append(el("p", { class: "small" }, [
+      el("a", {
+        href: `#/paths?pool=${poolCodeOf(weapon, gender)}&ids=${f.id}`,
+        text: "…or against a cohort's career trajectory →",
+      }),
+    ]));
+  }
   try {
     const index = await fencerSearchIndex();
     card.append(fencerPicker({

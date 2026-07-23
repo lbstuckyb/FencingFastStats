@@ -57,10 +57,21 @@ function palette() {
 async function mount(container, build) {
   const echarts = await loadECharts();
   const chart = echarts.init(container, null, { renderer: "svg" });
-  chart.setOption(build());
+  let width = container.clientWidth;
+  chart.setOption(build(width));
 
-  const onResize = () => chart.resize();
-  const onTheme = () => chart.setOption(build(), true);
+  const onResize = () => {
+    chart.resize();
+    // How many rows the legend wraps to depends on the width, and the grid has
+    // to leave room for them. Rebuilding only on a real width change keeps the
+    // two in step without throwing away legend toggles on every resize event.
+    const next = container.clientWidth;
+    if (Math.abs(next - width) > 24) {
+      width = next;
+      chart.setOption(build(width), true);
+    }
+  };
+  const onTheme = () => chart.setOption(build(container.clientWidth), true);
   window.addEventListener("resize", onResize);
   window.addEventListener("ffs:themechange", onTheme);
   const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -153,27 +164,87 @@ export function renderRatingChart(container, points) {
 
 // ---- metric over time ------------------------------------------------------
 
+// A horizontal legend wraps on its own but never tells the grid it has grown,
+// so on a phone the second row lands on top of the first y tick. The row count
+// is estimated from the item widths — the key + its gaps, plus the label at
+// roughly 6.6px per character at 12px — and the grid's top inset follows it.
+const LEGEND_ROW = 22;
+
+function estimateLegendRows(names, width) {
+  const available = Math.max(160, (width || 640) - 8);
+  let rows = 1;
+  let used = 0;
+  for (const name of names) {
+    const item = 12 + 5 + name.length * 6.6 + 16;
+    if (used && used + item > available) { rows += 1; used = item; }
+    else used += item;
+  }
+  return rows;
+}
+
 // `series`: [{ name, points: [[x, value], …], colorIndex, dashed }]
-//   x is a date string when `granularity` is "comp" and a season number when it
-//   is "season" — the two need different axis types, not different charts.
+//   x is a date string when `granularity` is "comp", a season number when it is
+//   "season" and an age when it is "age" — they need different axis types, not
+//   different charts.
 // `axis`:   { label, reversed, format } — `format` is a value -> string
 //   function, so the axis, the tooltip and the end-label all speak the metric's
 //   own units (see metrics.formatMetric).
-function metricOption(series, axis, granularity) {
+// `band`:   optional { name, colorIndex, xs, lower, upper } — a quantile band
+//   drawn behind the lines as a 10% wash of its own hue (the area-fill spec).
+//   It is silent and legend-less: the median line it belongs to carries the
+//   identity, and its numbers ride that line's tooltip.
+function metricOption(series, axis, granularity, band, width) {
   const { textPrimary, textSecondary, gridLine, surface } = palette();
   const multi = series.length > 1;
   // Past four lines a label at every line-end turns into a stack of collided
   // text; the legend and the tooltip carry identity from there on.
   const direct = series.length <= 4;
+  const legendRows = multi ? estimateLegendRows(series.map((s) => s.name), width) : 0;
+
+  // The band is one polygon between the two quantiles, drawn by a custom
+  // series. Stacking two lines is the usual recipe and is wrong here: on a
+  // cartesian value/value axis ECharts stacks the *x* dimension too, which
+  // folds the band onto the baseline and doubles the x extent. The data is
+  // still declared point-by-point with `encode` so both quantiles count
+  // towards the axis extents; only the first item draws.
+  const bandSeries = band ? [{
+    type: "custom",
+    name: `${band.name} band`,
+    silent: true,
+    z: 1,
+    data: band.xs.map((x, i) => [x, band.lower[i], band.upper[i]]),
+    encode: { x: 0, y: [1, 2] },
+    renderItem: (params, api) => {
+      if (params.dataIndex !== 0) return null;
+      const top = band.xs.map((x, i) => api.coord([x, band.upper[i]]));
+      const bottom = band.xs.map((x, i) => api.coord([x, band.lower[i]])).reverse();
+      return {
+        type: "polygon",
+        shape: { points: [...top, ...bottom] },
+        // The area-fill spec: the series hue as a ~10% wash, never a block.
+        style: { fill: seriesColor(band.colorIndex ?? 0), opacity: 0.1 },
+      };
+    },
+  }] : [];
 
   return {
     animation: false,
     backgroundColor: "transparent",
-    grid: { left: 8, right: direct ? 96 : 16, top: multi ? 40 : 16, bottom: 8, containLabel: true },
+    grid: {
+      left: 8,
+      right: direct ? 96 : 16,
+      top: legendRows ? 16 + legendRows * LEGEND_ROW : 16,
+      // `containLabel` reserves room for the tick labels but not for the axis
+      // name sitting under them.
+      bottom: granularity === "age" ? 26 : 8,
+      containLabel: true,
+    },
     legend: multi ? {
       show: true,
       top: 0,
       left: 0,
+      // Named explicitly so the band's two helper series stay out of it.
+      data: series.map((s) => s.name),
       itemGap: 16,
       icon: "roundRect",
       itemWidth: 12,
@@ -188,13 +259,15 @@ function metricOption(series, axis, granularity) {
       borderColor: gridLine,
       borderWidth: 1,
       textStyle: { color: textPrimary, fontSize: 12 },
-      formatter: (items) => {
+      formatter: (rawItems) => {
+        // The band answers the axis pointer even though it is silent.
+        const items = rawItems.filter((it) => !/ band$/.test(it.seriesName));
         if (!items.length) return "";
-        const head = granularity === "season"
-          ? `Season ${items[0].value[0]}`
-          : new Date(items[0].value[0]).toLocaleDateString("en-GB", {
-            day: "numeric", month: "short", year: "numeric", timeZone: "UTC",
-          });
+        const head = granularity === "season" ? `Season ${items[0].value[0]}`
+          : granularity === "age" ? `Age ${items[0].value[0]}`
+            : new Date(items[0].value[0]).toLocaleDateString("en-GB", {
+              day: "numeric", month: "short", year: "numeric", timeZone: "UTC",
+            });
         const lines = items.map((it) =>
           `${it.marker}<span style="color:${textSecondary}">${it.seriesName}</span> ` +
           `<strong>${axis.format(it.value[1])}</strong>` +
@@ -202,14 +275,20 @@ function metricOption(series, axis, granularity) {
         return `<span style="color:${textSecondary}">${head}</span><br>${lines.join("<br>")}`;
       },
     },
-    xAxis: granularity === "season"
+    xAxis: granularity !== "comp"
       ? {
         type: "value",
-        // Seasons are years, so the axis has to span the data rather than
-        // reach back to zero the way a value axis does by default.
+        // Seasons and ages are counts, so the axis has to span the data rather
+        // than reach back to zero the way a value axis does by default.
         min: "dataMin",
         max: "dataMax",
         minInterval: 1,
+        // A bare row of numbers in the twenties reads as either; only the age
+        // axis needs saying, and under the axis it can't collide with a tick.
+        name: granularity === "age" ? "Age" : undefined,
+        nameLocation: "middle",
+        nameGap: 26,
+        nameTextStyle: { color: textSecondary, fontSize: 11 },
         axisLine: { lineStyle: { color: gridLine } },
         axisTick: { show: false },
         axisLabel: { color: textSecondary, fontSize: 11, hideOverlap: true, formatter: (v) => String(v) },
@@ -235,10 +314,11 @@ function metricOption(series, axis, granularity) {
       axisLine: { show: false },
       splitLine: { lineStyle: { color: gridLine, width: 1, type: "solid" } },
     },
-    series: series.map((s) => {
+    series: [...bandSeries, ...series.map((s) => {
       const color = seriesColor(s.colorIndex ?? 0);
       return {
         type: "line",
+        z: 2,
         name: s.name,
         data: s.points,
         showSymbol: true,
@@ -263,11 +343,11 @@ function metricOption(series, axis, granularity) {
           formatter: () => s.shortName ?? s.name,
         } : { show: false },
       };
-    }),
+    })],
   };
 }
 
 /** Renders a metric-over-time chart; returns a dispose function. */
-export function renderMetricChart(container, { series, axis, granularity }) {
-  return mount(container, () => metricOption(series, axis, granularity));
+export function renderMetricChart(container, { series, axis, granularity, band = null }) {
+  return mount(container, (width) => metricOption(series, axis, granularity, band, width));
 }
