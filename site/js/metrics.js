@@ -75,3 +75,83 @@ export function metricValue(totals, metric, position, countIndex) {
   const denominator = totals.counts[countIndex.get(metric.den)];
   return denominator ? sum / denominator : null;
 }
+
+// ---- fencer-shard rows -----------------------------------------------------
+// A profile's own results carry raw per-competition values (`m`, in registry
+// order) rather than the explorer's pre-summed rows, so the same aggregation
+// has to be done here from scratch — same rule, same denominators.
+
+// Which column's non-null count each `den` is taken over. This reproduces
+// `metrics.COUNT_SOURCE` without shipping it: the representative column is the
+// first metric in registry order carrying that `den`, which is exactly how the
+// Python side picks it (POS for `comps`, PVICT for `poule`, TTR for `de`, …).
+export function denPositions(meta) {
+  const positions = new Map();
+  metricsOf(meta).forEach((m, i) => {
+    if (!positions.has(m.den)) positions.set(m.den, i);
+  });
+  return positions;
+}
+
+/**
+ * Aggregates raw shard result rows into one value per metric: sums are summed,
+ * means are the sum divided by the population the metric actually has data for
+ * — never by the number of competitions entered.
+ */
+export function aggregateResults(rows, meta) {
+  const metrics = metricsOf(meta);
+  const dens = denPositions(meta);
+
+  const sums = new Array(metrics.length).fill(null);
+  const counts = new Array(metrics.length).fill(0);
+  for (const row of rows) {
+    const values = row.m ?? [];
+    for (let i = 0; i < metrics.length; i += 1) {
+      const v = values[i];
+      if (v === null || v === undefined) continue;
+      sums[i] = (sums[i] ?? 0) + v;
+      counts[i] += 1;
+    }
+  }
+
+  return metrics.map((metric, i) => {
+    const sum = sums[i];
+    if (sum === null) return null;
+    if (metric.agg === "sum") return sum;
+    const denominator = counts[dens.get(metric.den) ?? i];
+    return denominator ? sum / denominator : null;
+  });
+}
+
+/** The value of one metric on a single result row, by registry position. */
+export const resultValue = (row, position) => row.m?.[position] ?? null;
+
+// The season a result belongs to is the one baked into its competition id
+// ("2026-799"), which is fie.org's own season rather than the calendar year of
+// the date — a September competition belongs to the season that has just begun.
+export function seasonOfResult(row) {
+  const season = Number(String(row.competition_id ?? "").split("-")[0]);
+  return Number.isFinite(season) ? season : Number(String(row.date ?? "").slice(0, 4));
+}
+
+/** `level` code -> level-group code, with the registry's catch-all group. */
+export function levelGrouper(meta) {
+  const byLevel = new Map();
+  let fallback = "OTH";
+  for (const group of meta?.level_groups ?? []) {
+    for (const level of group.levels ?? []) byLevel.set(level, group.code);
+    if (!(group.levels ?? []).length) fallback = group.code;
+  }
+  return (level) => byLevel.get(level) ?? fallback;
+}
+
+/** Axis description for the metric chart: units, direction, label. */
+export function metricAxis(metric) {
+  return {
+    label: metric.short,
+    // A better place is a *lower* number, so the good end of the axis has to be
+    // the top one.
+    reversed: metric.better === "low",
+    format: (v) => formatMetric(v, metric.fmt),
+  };
+}

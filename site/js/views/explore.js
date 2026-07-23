@@ -11,7 +11,7 @@
 import {
   DEFAULT_POOL, POOLS, getExplore, getFencerIndex, getMeta, isPool, poolCodeOf,
 } from "../data.js";
-import { el, fencerHref, fmtInt, normalize } from "../util.js";
+import { chipRow, el, fencerHref, fmtInt, normalize, pressOnly, toggle } from "../util.js";
 import {
   addRow, countIndexOf, emptyTotals, formatMetric, initialDirection, metricValue,
   ROW_ATHLETE, ROW_LEVEL_GROUP, ROW_SEASON,
@@ -287,9 +287,12 @@ export async function render({ params }) {
         el("a", { href: fencerHref(id), text: names.get(id) ?? `#${id}` }),
         el("button", { type: "button", class: "pick-drop", "data-drop": id, "aria-label": `Remove ${names.get(id) ?? id}` }, ["×"]),
       ])),
-      ids.length === 2
-        ? el("a", { class: "small", href: `#/h2h?a=${ids[0]}&b=${ids[1]}`, text: "Head-to-head →" })
-        : el("span", { class: "small muted", text: "Pick exactly two for a head-to-head." })
+      ...[
+        el("a", { class: "small", href: `#/compare?ids=${ids.join(",")}`, text: "Compare selected →" }),
+        ids.length === 2
+          ? el("a", { class: "small", href: `#/h2h?a=${ids[0]}&b=${ids[1]}`, text: "Head-to-head →" })
+          : null,
+      ].filter(Boolean)
     );
   }
 
@@ -452,23 +455,3 @@ export async function render({ params }) {
   ]);
 }
 
-// ---- small helpers ---------------------------------------------------------
-
-function chipRow(label, items) {
-  return el("div", { class: "pool-filter", role: "group", "aria-label": label },
-    items.map((item) => el("button", {
-      type: "button", text: item.label, "data-value": item.value,
-      "aria-pressed": item.on ? "true" : "false",
-    })));
-}
-
-function pressOnly(container, active) {
-  for (const b of container.querySelectorAll("button")) {
-    b.setAttribute("aria-pressed", b === active ? "true" : "false");
-  }
-}
-
-function toggle(set, value) {
-  if (set.has(value)) set.delete(value);
-  else set.add(value);
-}

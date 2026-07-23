@@ -6,48 +6,10 @@
 // bout-by-bout list comes from the pair file, which build_site.py only writes
 // for pairs with >=5 meetings.
 
-import { getFencer, getFencerIndex, getH2HPair, roundLabel, weaponName } from "../data.js";
-import { el, fencerLink, fmtDate, fmtInt, normalize } from "../util.js";
-
-const SUGGESTIONS = 8;
-
-function picker(label, slot, index, selected, onPick) {
-  const input = el("input", {
-    class: "search-box", type: "search", id: `h2h-${slot}`,
-    placeholder: "Type a fencer's name", autocomplete: "off",
-    value: selected ? selected.n : "",
-  });
-  const list = el("ul", { class: "suggest" });
-
-  function close() { list.replaceChildren(); }
-
-  input.addEventListener("input", () => {
-    const terms = normalize(input.value).split(/\s+/).filter(Boolean);
-    if (!terms.length) return close();
-    const hits = index.filter((e) => terms.every((t) => e.key.includes(t))).slice(0, SUGGESTIONS);
-    list.replaceChildren(...hits.map((e) =>
-      el("li", {}, [
-        el("button", { type: "button", "data-id": e.i }, [
-          el("span", { class: "name", text: e.n }),
-          el("span", { class: "flag", text: e.c ?? "" }),
-        ]),
-      ])
-    ));
-  });
-  input.addEventListener("blur", () => setTimeout(close, 150));
-  list.addEventListener("click", (ev) => {
-    const button = ev.target.closest("button");
-    if (!button) return;
-    close();
-    onPick(Number(button.dataset.id));
-  });
-
-  return el("div", { class: "h2h-picker" }, [
-    el("label", { class: "small muted", for: `h2h-${slot}`, text: label }),
-    input,
-    list,
-  ]);
-}
+import { getFencer, getH2HPair, getMeta, roundLabel, weaponName } from "../data.js";
+import { metricSection, metricState } from "../metricview.js";
+import { fencerPicker, fencerSearchIndex } from "../picker.js";
+import { el, fencerLink, fmtDate, fmtInt } from "../util.js";
 
 function recordCard(a, b, rows) {
   const bouts = rows.reduce((n, r) => n + r[2], 0);
@@ -140,7 +102,7 @@ function boutsCard(pair, a, b) {
   ]);
 }
 
-async function comparison(idA, idB) {
+async function comparison(idA, idB, meta) {
   if (idA === idB) {
     return el("p", { class: "notice", text: "Pick two different fencers." });
   }
@@ -148,12 +110,24 @@ async function comparison(idA, idB) {
   const [a, b] = await Promise.all([getFencer(idA), getFencer(idB)]);
   const rows = (a.h2h_all ?? []).filter((r) => r[0] === idB);
 
+  // Meeting or not, the two careers can still be set side by side — that is
+  // the comparison a reader arriving from "Compare" is usually after.
+  const metrics = metricSection({
+    meta,
+    fencers: [a, b],
+    state: metricState(meta),
+    title: "Metrics over time",
+  }).node;
+
   if (!rows.length) {
-    return el("section", { class: "card" }, [
-      el("h2", { text: "No recorded meeting" }),
-      el("p", { class: "muted" }, [
-        `${a.name} and ${b.name} have never met in a senior individual FIE competition on record.`,
+    return el("div", { class: "grid" }, [
+      el("section", { class: "card" }, [
+        el("h2", { text: "No recorded meeting" }),
+        el("p", { class: "muted" }, [
+          `${a.name} and ${b.name} have never met in a senior individual FIE competition on record.`,
+        ]),
       ]),
+      metrics,
     ]);
   }
 
@@ -165,12 +139,12 @@ async function comparison(idA, idB) {
     pair
       ? boutsCard(pair, a, b)
       : el("p", { class: "small muted", text: "Bout-by-bout detail is generated for pairs with at least five meetings." }),
+    metrics,
   ]);
 }
 
 export async function render({ params }) {
-  const raw = await getFencerIndex();
-  const index = raw.map((e) => ({ ...e, key: normalize(e.n) }));
+  const [index, meta] = await Promise.all([fencerSearchIndex(), getMeta()]);
   const byId = new Map(index.map((e) => [e.i, e]));
 
   const idA = Number(params.get("a")) || null;
@@ -182,14 +156,20 @@ export async function render({ params }) {
   };
 
   const pickers = el("div", { class: "h2h-pickers" }, [
-    picker("Fencer A", "a", index, byId.get(idA), (id) => go(id, idB)),
+    fencerPicker({
+      label: "Fencer A", id: "h2h-a", index,
+      value: byId.get(idA)?.n ?? "", onPick: (id) => go(id, idB),
+    }),
     el("div", { class: "h2h-vs", text: "vs" }),
-    picker("Fencer B", "b", index, byId.get(idB), (id) => go(idA, id)),
+    fencerPicker({
+      label: "Fencer B", id: "h2h-b", index,
+      value: byId.get(idB)?.n ?? "", onPick: (id) => go(idA, id),
+    }),
   ]);
 
   const body = el("div", { class: "h2h-body" });
   if (idA && idB) {
-    body.replaceChildren(await comparison(idA, idB));
+    body.replaceChildren(await comparison(idA, idB, meta));
   } else {
     body.replaceChildren(el("p", { class: "notice", text: "Choose two fencers to see their record and every bout between them." }));
   }

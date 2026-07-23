@@ -1,7 +1,10 @@
-// Fencer profile: career summary, rating timeline chart, full results history
-// and top rivals, from data/fencers/{id%100}/{id}.json.
+// Fencer profile: career summary, rating timeline chart, metric-over-time
+// chart, season-by-season metrics, full results history and top rivals, from
+// data/fencers/{id%100}/{id}.json.
 
 import { getFencer, getMeta, weaponName } from "../data.js";
+import { metricSection, metricState, seasonTable } from "../metricview.js";
+import { fencerPicker, fencerSearchIndex } from "../picker.js";
 import { el, fencerLink, fmtDate, fmtInt, fmtNum, seasonOf } from "../util.js";
 
 // Result rows carry their metrics as a fixed-order array (`m`) keyed by
@@ -261,6 +264,28 @@ function rivalsCard(f) {
   ]);
 }
 
+// "Compare with…" — the multi-fencer version of everything below lives on the
+// compare route, so this hands off rather than growing a second picker stack.
+async function compareCard(f) {
+  const card = el("section", { class: "card" }, [
+    el("h2", { text: "Compare with another fencer" }),
+    el("p", { class: "small muted", text: "Put a second fencer's metrics beside these — same chart, same filters, side-by-side table." }),
+  ]);
+  try {
+    const index = await fencerSearchIndex();
+    card.append(fencerPicker({
+      label: "Add a fencer",
+      id: "profile-compare",
+      index: index.filter((e) => e.i !== f.id),
+      onPick: (id) => { location.hash = `#/compare?ids=${f.id},${id}`; },
+    }));
+  } catch (err) {
+    console.error(err);
+    card.append(el("p", { class: "notice", text: "The fencer index could not be loaded." }));
+  }
+  return card;
+}
+
 export async function render({ parts }) {
   const id = Number(parts[1]);
   if (!Number.isFinite(id)) throw new Error(`Not a fencer id: ${parts[1]}`);
@@ -281,11 +306,26 @@ export async function render({ parts }) {
     ]);
   }
 
+  // The metric chart and the season table share one filter state, so changing
+  // a level chip in the chart re-aggregates the table under it.
+  const state = metricState(meta);
+  const seasons = seasonTable({ meta, fencer, state });
+  const section = metricSection({
+    meta,
+    fencers: [fencer],
+    state,
+    comparison: false,
+    onChange: () => seasons.refresh(),
+  });
+
   return el("div", {}, [
     head(fencer),
     careerCards(fencer),
     el("div", { class: "grid", style: "margin-top:1rem" }, [
       ratingCard(fencer),
+      section.node,
+      seasons.node,
+      await compareCard(fencer),
       rivalsCard(fencer),
       resultsCard(fencer, metricReader(meta)),
     ]),

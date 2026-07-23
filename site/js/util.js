@@ -44,6 +44,29 @@ export function fencerLink(id, name, extraClass) {
   return el("a", { href: fencerHref(id), class: extraClass }, [name || `#${id}`]);
 }
 
+// ---- small controls --------------------------------------------------------
+// Toggle chips: a row of `aria-pressed` buttons carrying their value in
+// `data-value`. The caller owns the state and listens on the row.
+
+export function chipRow(label, items) {
+  return el("div", { class: "pool-filter", role: "group", "aria-label": label },
+    items.map((item) => el("button", {
+      type: "button", text: item.label, title: item.title ?? null,
+      "data-value": item.value, "aria-pressed": item.on ? "true" : "false",
+    })));
+}
+
+export function pressOnly(container, active) {
+  for (const b of container.querySelectorAll("button")) {
+    b.setAttribute("aria-pressed", b === active ? "true" : "false");
+  }
+}
+
+export function toggle(set, value) {
+  if (set.has(value)) set.delete(value);
+  else set.add(value);
+}
+
 export function loading(message = "Loading…") {
   return el("p", { class: "notice", text: message });
 }

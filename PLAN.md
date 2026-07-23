@@ -368,6 +368,53 @@ Home (pool selector, ELO top-20, recent comps, leaderboards) · Fencer search (c
     which M6.7 builds. Rather than ship a link to a 404, the selection bar shows the picked
     fencers and offers head-to-head when exactly two are selected; M6.7 swaps in the compare
     route using the same selection state.
-- [ ] M6.7 — Profile metric chart, per-season table, H2H metric comparison
+- [x] M6.7 — Profile metric chart, per-season table, H2H metric comparison (this session, 2026-07-23)
+  - Pure UI over the existing shards — no rebuild, no new data artifact, no change to
+    `site/data/`. (M6.6's finished work was still uncommitted at the start of this session; it
+    was committed as `b6fa7c6` before M6.7 began.)
+  - **New `site/js/metricview.js`** — the one implementation of the advanced-metric UI, used by
+    three views: the filter bar (metric picker, season range, level-group chips, per-season /
+    per-competition toggle), the metric-over-time chart, the side-by-side comparison table and
+    the season-by-season table. Nothing about a metric is re-derived here: label, blurb, format,
+    aggregation and sort direction all come from the registry through `metrics.js`.
+  - **Aggregation from raw shard rows** (`metrics.aggregateResults`): the explorer re-aggregates
+    pre-summed rows, but a profile holds one raw value per competition, so the same rule had to
+    be re-implemented — sum, then divide by the population that actually carries the metric.
+    The `den` → representative-column mapping is *derived* in JS as "the first metric in registry
+    order with that `den`", which reproduces `metrics.COUNT_SOURCE` exactly (all eight keys
+    checked) rather than shipping a second copy of it in `meta.json`.
+  - **`#/compare?ids=a,b,…`** (`site/js/views/compare.js`): fencer chips + type-ahead add, up to
+    **6** fencers (one categorical colour slot each), missing shards and over-length id lists
+    reported rather than fatal. Filters round-trip through the hash with `replaceState`. The
+    explorer's selection bar now links here (M6.6 had deferred it to avoid shipping a 404) and
+    keeps its two-fencer head-to-head link.
+  - **Profile** gains the metric chart, the season-by-season table (with an "All seasons" row)
+    sharing one filter state with it, and a "Compare with another fencer" picker that hands off
+    to `#/compare`. **H2H** keeps the record card and bout list and gains the same chart plus
+    the two-column comparison table, so profile → "Compare" no longer dead-ends at bouts only.
+  - `site/js/picker.js` extracted from `h2h.js` (one type-ahead used by all three views);
+    `chipRow`/`pressOnly`/`toggle` moved from `explore.js` into `util.js`.
+  - **Chart work** (dataviz skill invoked first): `chart.js` now has a shared mount/theme/resize
+    core plus `renderMetricChart` — multi-series, legend from two series up, direct end-labels
+    only up to four, `POS`-style metrics on a reversed axis (legacy did the same), one line per
+    fencer × weapon with colour following the *fencer* and a dashed line for their second weapon.
+    Categorical slots 2–6 added to `style.css` from the dataviz reference palette; the six-slot
+    set was validated with the skill's `validate_palette.js` in both modes (worst adjacent CVD
+    ΔE 9.1 light / 8.4 dark, normal-vision 19.6 / 19.3). Three light-mode slots sit under 3:1 on
+    the light surface, so the relief rule applies — every chart ships a `<details>` table view.
+  - Two chart bugs found by looking at the rendered PNG rather than the DOM: the season x-axis
+    was a value axis anchored at 0 (every point crushed into the right margin — fixed with
+    `min/max: dataMin/dataMax`), and an inverted y-axis put its `nameLocation:"end"` label on top
+    of the first x tick (axis name dropped; the picker and the note under the chart name the
+    metric).
+  - Verified headlessly at 375/390/420px and 1280px in both themes: profile (21208, 10222),
+    `#/compare` (2 fencers, 4 fencers, a 7-id link with a missing shard and an over-cap id, and
+    an empty `ids=`), `#/h2h` for a met pair and a never-met pair, `#/explore`. **Zero console
+    errors or unhandled rejections, `scrollWidth <= viewport` everywhere.** Spot-check against
+    the shard: Errigo's 2015–2020 WC+GP window holds 60 competitions but only 20 with poule data,
+    and the chart plots exactly those 20 with a mean `PIND` of 81.3% — the wrong denominator
+    (60) would have read 27%.
+  - `pytest`: **88/88 green** (unchanged — this milestone added no Python; the site has no JS
+    test harness, so verification is the headless-Chrome acceptance run above).
 - [ ] M6.8 — Trajectories page + polish and verification
 - [ ] M7 — Proposal + backlog docs
