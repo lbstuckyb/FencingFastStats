@@ -24,6 +24,7 @@ See [`PLAN.md`](PLAN.md) for the rebuild plan and its progress log,
 | Trajectories (`#/paths`) | A cohort's numbers by age — median with a p25–p75 band — with any fencer's own career overlaid |
 | Head-to-head (`#/h2h?a=&b=`) | Two fencers' record against each other, every bout between them, and their metrics compared |
 | Methodology (`#/methodology`) | The rating model, the metric glossary generated from the registry, and the data's limits |
+| Play (`#/play`) | A small épée minigame — no data, just distance and tempo |
 
 Ratings and cohort tiers are **this project's own measure**, computed from bout results.
 The FIE's official points and rankings are not part of the dataset and are never implied

@@ -3,7 +3,7 @@
 // Routes:  #/  ·  #/search?q=…&pool=…  ·  #/fencer/{id}  ·  #/h2h?a=…&b=…
 //          #/competitions?pool=…&season=…  ·  #/competition/{id}
 //          #/explore?pool=…&…  ·  #/compare?ids=…  ·  #/paths?pool=…&…
-//          #/methodology?s=…
+//          #/methodology?s=…  ·  #/play
 // Views are lazily imported so a cold visit to a fencer profile doesn't parse
 // the home page's code (and vice versa).
 
@@ -82,6 +82,9 @@ async function route() {
     } else if (parts[0] === "methodology") {
       setActiveNav("methodology");
       view = await import("./views/methodology.js");
+    } else if (parts[0] === "play") {
+      setActiveNav("play");
+      view = await import("./views/play.js");
     } else {
       setActiveNav(null);
       main.replaceChildren(notFound());

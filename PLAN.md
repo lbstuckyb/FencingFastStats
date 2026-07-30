@@ -494,3 +494,36 @@ Senior Worlds (Hong Kong, 22–27 July 2026) had finished.
 - Result: 3,092 → **3,098 competitions**, +1,029 result rows, +3,711 bouts, 2026 season 109 →
   115. `ffs validate` still 286/286 matched, parity 99.3%. `pytest` 97/97 (88 + 9 new).
 - **`docs/updating.md`** is new — the refresh runbook, which had never been written down.
+
+### Out-of-band: `#/play` piste duel minigame (2026-07-30)
+
+Not a milestone and not in this plan — a small side-scrolling épée game at `#/play`, built to a
+separate plan (`~/.claude/plans/can-you-create-a-inherited-honey.md`). **M7 is still the next
+milestone.** No Python, no `data/` and no `site/data/` involvement: `site/js/game/{engine,poses,
+render,input}.js`, `site/js/views/play.js`, a route branch in `app.js`, an eighth nav link and a
+`.game-*` block in `style.css`. The site now has twelve routes.
+
+- `engine.js` is DOM-free and takes a seeded RNG, so the whole rule set is testable in node. The
+  invariant sweep (120 matches × 4 input modes, ~65k steps) held: no NaN, lives only fall, score
+  only rises, a double moves both counters, every run terminates, the rear limit bills once.
+- **Four numbers from the game plan were wrong and are deliberately not restored** — each is
+  commented at its `CONFIG` entry. The en garde gap sat *inside* lunge reach, so every reset
+  handed out a free lunge and mashing was dominant (gap 46 → 70, reach 58 → 52). The parry's
+  active window was shorter than the lunge's windup, so a parry thrown on the tell always expired
+  before the blade arrived (120 → 220ms). The opponent needed a second read — refusing to launch
+  into an opening that will have closed — because without it the bout **livelocks** (a run of
+  5010 simulated seconds and 1.7M parries scored nothing). And instant touch resolution made the
+  double, which the whole risk model rests on, a ~1% freak event; a real 90ms lockout puts it at
+  9.5% of a reckless player's exchanges.
+- Tuning is judged by scripted policies, median over 60–200 seeded runs: competent 19 > brawler 8
+  > mash-lunge 3 > mash-attack 1 > turtle/spam 0. **Preserve that ordering if anything is
+  retuned.**
+- **Headless gotcha:** Chrome `--headless=new --virtual-time-budget` fires `requestAnimationFrame`
+  exactly *once*, so a naive check reports a working page with a frozen game. The debug harness
+  shims rAF onto `setTimeout` (virtual time does drive timers); screenshots pose the real state
+  objects and call the real `draw()` rather than trying to film a live run.
+- Verified in-page at 375px and 1280px in both themes: zero console errors, no overflow, keys owned
+  only while a run is live, navigating away kills the RAF loop dead, restart clean, high score
+  persisted. Rendered PNGs caught two draw bugs (ceiling lights through the HUD text; each
+  fencer's rear-limit line hidden behind that fencer).
+- `pytest`: 97/97 green, unchanged — no Python was touched.

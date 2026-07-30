@@ -1,5 +1,10 @@
 # Handoff — start of next session
 
+> **Nothing is left open.** The off-plan `#/play` minigame is built, verified and
+> committed; what it changed and what its tuning must preserve is in `PLAN.md`
+> under "Out-of-band: `#/play` piste duel minigame". M7 below is the next
+> *milestone* and the last one.
+
 **State: M6 is complete — M6.8 is DONE and committed, and with it the whole
 site. M7 (proposal + backlog docs) is next, and it is the last milestone.**
 
@@ -34,10 +39,10 @@ Two things it needs a decision from the user on, both untouched so far:
 
 ## State of the repo
 
-- **Eleven routes work and are verified**: `#/`, `#/search`, `#/fencer/{id}`,
+- **Twelve routes work and are verified**: `#/`, `#/search`, `#/fencer/{id}`,
   `#/competitions`, `#/competition/{id}`, `#/h2h?a=&b=`, `#/explore?pool=`,
   `#/compare?ids=`, `#/paths?pool=&tier=&metric=&ids=`, `#/methodology?s=`,
-  plus the 404 view.
+  `#/play`, plus the 404 view.
 - `site/data/` is gitignored. Rebuild with `.venv/bin/ffs build-site` (~23 min,
   212 MB, 22k files); it is a pure function of `data/canonical/*.parquet`.
   **M7 needs no rebuild.**

@@ -403,6 +403,66 @@ th.num .th-sort { width: 100%; text-align: right; }
   border-radius: 4px; padding: .05rem .3rem;
 }
 
+/* ---------- play ---------- */
+
+/* The canvas draws at a fixed 320x180 and is blown up by CSS: `pixelated` is
+   what keeps the enlarged pixels crisp instead of smearing them, and it is
+   half of where the retro look comes from (the other half is the 12fps pose
+   stepping in js/game/poses.js). */
+/* Capped and centred: a 320x180 canvas stretched across the full card upscales
+   past 3x, where the pixel grid stops reading as retro and just looks mushy —
+   and the control pad ends up a row of very wide, very short buttons. */
+.game-surface { display: grid; gap: .75rem; max-width: 720px; margin: 0 auto; }
+.game-stage { position: relative; }
+.game-canvas {
+  display: block; width: 100%; aspect-ratio: 16 / 9;
+  background: var(--surface-0);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  image-rendering: pixelated;
+}
+
+.game-hud {
+  display: flex; flex-wrap: wrap; gap: .35rem 1.25rem;
+  font-size: .8125rem; font-variant-numeric: tabular-nums;
+}
+.game-side { flex: 1 1 auto; text-align: right; }
+.game-status { margin: 0; min-height: 1.2em; }
+
+.game-overlay {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: .25rem; text-align: center; padding: 1rem;
+  border-radius: var(--radius);
+  /* color-mix keeps the piste readable behind the overlay in both themes
+     without a second hard-coded scrim colour. */
+  background: color-mix(in srgb, var(--surface-0) 82%, transparent);
+}
+.game-overlay[hidden] { display: none; }
+.game-overlay h2 { margin: 0; }
+.game-overlay p { margin: 0 0 .5rem; color: var(--text-secondary); }
+
+.game-button {
+  font: inherit; font-weight: 600; cursor: pointer;
+  padding: .5rem 1.25rem; border-radius: var(--radius);
+  background: var(--series-1); border: 1px solid var(--series-1); color: #fff;
+}
+.game-button:hover { background: var(--text-primary); border-color: var(--text-primary); }
+
+.game-pad { display: flex; flex-wrap: wrap; gap: .375rem; }
+.game-pad button {
+  font: inherit; font-size: 1.1rem; line-height: 1; cursor: pointer;
+  flex: 1 1 3rem; min-width: 2.75rem; padding: .6rem .25rem;
+  background: var(--surface-2); color: var(--text-primary);
+  border: 1px solid var(--border-strong); border-radius: var(--radius);
+  /* Without this a press scrolls the page instead of moving the fencer. */
+  touch-action: none; user-select: none;
+}
+.game-pad button:active { background: var(--series-1); border-color: var(--series-1); color: #fff; }
+
+/* Same cap as .game-surface so the rules line up with the canvas on desktop. */
+.game-rules { margin: 1rem auto 0; max-width: 720px; }
+.game-rules table { margin-top: .5rem; }
+
 @media (max-width: 640px) {
   .site-nav { gap: .75rem; overflow-x: auto; }
   .site-nav a { white-space: nowrap; }
@@ -410,4 +470,7 @@ th.num .th-sort { width: 100%; text-align: right; }
   .chart { height: 260px; }
   .h2h-vs { display: none; }
   .h2h-name.right { text-align: left; }
+  /* On a phone the "you are on the left" note wants its own line, not the
+     right-hand end of the score row. */
+  .game-side { flex-basis: 100%; text-align: left; }
 }
