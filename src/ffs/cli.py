@@ -114,28 +114,60 @@ def cmd_scrape(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_scrape_all(args: argparse.Namespace) -> int:
-    """Bulk historical scrape: Senior Individual competitions across a season
-    range, all weapons/genders. Resumable — competitions already present in
-    `data/canonical/competitions.parquet` are skipped (unless `--force`), and
+def _scrape_seasons(
+    client: FieClient,
+    seasons: list[int],
+    *,
+    weapon: str | None = None,
+    gender: str | None = None,
+    force: bool = False,
+    max_consecutive_fails: int = 15,
+    refresh_lists: bool = False,
+) -> dict:
+    """Scrape Senior Individual competitions across `seasons` (ascending).
+    Resumable — competitions already present in
+    `data/canonical/competitions.parquet` are skipped (unless `force`), and
     `FieClient`'s disk cache means a crashed/interrupted run mostly replays
     from cache on the next invocation rather than re-hitting fie.org.
 
     Writes are flushed once per season (not per competition) to keep parquet
     read/concat/write overhead bounded across ~3000 competitions; a crash
     mid-season loses that season's progress but it replays fast from cache.
-    """
-    client = FieClient()
-    known_seasons = client.fetch_seasons()
-    seasons = [s for s in range(args.from_season, args.to_season + 1) if s in known_seasons]
 
+    **The newest requested season's competition list is always re-fetched.**
+    Everything else reads the cached list, but a season still in progress
+    gains competitions after the list was first cached — that is exactly the
+    "catch me up with what just happened" case, and honouring the cache there
+    silently finds nothing new. Only the last season in the range can grow, so
+    this costs one extra request per run even on a full 2002-2026 replay.
+    `refresh_lists=True` re-fetches every season's list, for the rare case
+    fie.org backfills a closed season.
+
+    Returns `{"ok", "skipped", "failed", "aborted", "new_competition_ids"}`.
+    """
     existing_ids = _existing_competition_ids(CANONICAL_DIR)
     total_ok = total_skip = total_fail = 0
     failures: list[dict] = []
+    new_competition_ids: list[str] = []
     consecutive_fails = 0
 
+    def result(aborted: bool) -> dict:
+        return {
+            "ok": total_ok,
+            "skipped": total_skip,
+            "failed": total_fail,
+            "aborted": aborted,
+            "new_competition_ids": new_competition_ids,
+        }
+
     for season in seasons:
-        comps = list_competitions(client, season, weapon=args.weapon, gender=args.gender)
+        comps = list_competitions(
+            client,
+            season,
+            weapon=weapon,
+            gender=gender,
+            force=refresh_lists or season == seasons[-1],
+        )
         season_tables: dict[str, list[pd.DataFrame]] = {
             "competitions": [], "athletes": [], "results": [], "bouts": []
         }
@@ -143,17 +175,17 @@ def cmd_scrape_all(args: argparse.Namespace) -> int:
         for i, c in enumerate(comps, 1):
             comp_id = c["competitionId"]
             competition_id = f"{season}-{comp_id}"
-            if not args.force and competition_id in existing_ids:
+            if not force and competition_id in existing_ids:
                 total_skip += 1
                 continue
             try:
-                tables = _scrape_one(client, season, comp_id, force=args.force)
+                tables = _scrape_one(client, season, comp_id, force=force)
             except Exception as e:
                 total_fail += 1
                 consecutive_fails += 1
                 failures.append({"season": season, "comp_id": comp_id, "error": str(e)})
                 print(f"[{season}] {i}/{len(comps)} FAIL {comp_id}: {e}", file=sys.stderr)
-                if consecutive_fails >= args.max_consecutive_fails:
+                if consecutive_fails >= max_consecutive_fails:
                     print(
                         f"aborting: {consecutive_fails} consecutive failures "
                         "(possible network/site issue)",
@@ -171,12 +203,13 @@ def cmd_scrape_all(args: argparse.Namespace) -> int:
                         f"{total_fail} failed",
                         file=sys.stderr,
                     )
-                    return 1
+                    return result(aborted=True)
                 continue
             consecutive_fails = 0
             for name, df in tables.items():
                 season_tables[name].append(df)
             existing_ids.add(competition_id)
+            new_competition_ids.append(competition_id)
             season_new += 1
             total_ok += 1
             print(f"[{season}] {i}/{len(comps)} ok {comp_id} ({c.get('name')})", file=sys.stderr)
@@ -190,7 +223,34 @@ def cmd_scrape_all(args: argparse.Namespace) -> int:
 
     _write_failures(failures)
     print(f"done: {total_ok} ok, {total_skip} skipped, {total_fail} failed", file=sys.stderr)
-    return 0
+    return result(aborted=False)
+
+
+def cmd_scrape_all(args: argparse.Namespace) -> int:
+    """Bulk historical scrape: Senior Individual competitions across a season
+    range, all weapons/genders. See `_scrape_seasons` for the resume, flush and
+    list-refresh semantics."""
+    client = FieClient()
+    known_seasons = client.fetch_seasons()
+    seasons = [s for s in range(args.from_season, args.to_season + 1) if s in known_seasons]
+    if not seasons:
+        print(
+            f"no known season in range {args.from_season}-{args.to_season} "
+            f"(fie.org knows {min(known_seasons)}-{max(known_seasons)})",
+            file=sys.stderr,
+        )
+        return 1
+
+    outcome = _scrape_seasons(
+        client,
+        seasons,
+        weapon=args.weapon,
+        gender=args.gender,
+        force=args.force,
+        max_consecutive_fails=args.max_consecutive_fails,
+        refresh_lists=args.refresh_lists,
+    )
+    return 1 if outcome["aborted"] else 0
 
 
 def _write_failures(failures: list[dict]) -> None:
@@ -201,6 +261,98 @@ def _write_failures(failures: list[dict]) -> None:
         print(f"{len(failures)} failure(s) written to {fail_path}", file=sys.stderr)
     elif fail_path.exists():
         fail_path.unlink()
+
+
+def _latest_canonical_season(out_dir: Path) -> int | None:
+    path = out_dir / "competitions.parquet"
+    if not path.exists():
+        return None
+    seasons = pd.read_parquet(path, columns=["season"])["season"]
+    return int(seasons.max()) if len(seasons) else None
+
+
+def _default_update_seasons(known_seasons: list[int], latest: int | None) -> list[int]:
+    """Seasons `ffs update` scrapes when none are named: the newest season the
+    archive already holds, plus the one after it. The `+1` is what makes the
+    September season rollover work without anyone passing a flag — on 1 Sep the
+    new season's first competitions appear under a season the archive has never
+    seen. Both are intersected with fie.org's own season list, since
+    `fetch_competitions_list` silently returns its *entire* table for an
+    out-of-range season rather than an empty page."""
+    if latest is None:
+        return [max(known_seasons)] if known_seasons else []
+    return [s for s in (latest, latest + 1) if s in known_seasons]
+
+
+def cmd_update(args: argparse.Namespace) -> int:
+    """Catch the archive up with recently-finished competitions: re-fetch the
+    relevant season listing(s), scrape whatever is new, then recompute stats.
+
+    This is the routine "a competition just finished" path; `scrape-all` is the
+    bulk historical one. Note that a competition's `hasResults` flag in the
+    season listing is `0` even for finished events, so it is deliberately not
+    used as a gate — a competition that has no results simply fails to parse
+    and is recorded in `data/raw_cache/scrape_failures.json`.
+    """
+    client = FieClient()
+    known_seasons = client.fetch_seasons(force=True)
+
+    if args.season:
+        seasons = sorted(set(args.season))
+        unknown = [s for s in seasons if s not in known_seasons]
+        if unknown:
+            print(
+                f"season(s) {unknown} not in fie.org's known seasons "
+                f"({min(known_seasons)}-{max(known_seasons)})",
+                file=sys.stderr,
+            )
+            return 1
+    else:
+        seasons = _default_update_seasons(known_seasons, _latest_canonical_season(CANONICAL_DIR))
+        if not seasons:
+            print("nothing to update: no canonical data and no known seasons", file=sys.stderr)
+            return 1
+
+    print(f"updating season(s): {', '.join(str(s) for s in seasons)}", file=sys.stderr)
+    outcome = _scrape_seasons(
+        client,
+        seasons,
+        weapon=args.weapon,
+        gender=args.gender,
+        max_consecutive_fails=args.max_consecutive_fails,
+        refresh_lists=True,
+    )
+
+    if outcome["ok"]:
+        cmd_build_stats(args)
+        _print_new_competitions(outcome["new_competition_ids"])
+    else:
+        print("no new competitions — stats left untouched", file=sys.stderr)
+
+    if args.build_site and outcome["ok"]:
+        cmd_build_site(args)
+
+    if outcome["failed"]:
+        print(
+            f"{outcome['failed']} competition(s) failed — see "
+            "data/raw_cache/scrape_failures.json",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
+def _print_new_competitions(competition_ids: list[str]) -> None:
+    if not competition_ids:
+        return
+    comps = pd.read_parquet(CANONICAL_DIR / "competitions.parquet")
+    added = comps[comps["competition_id"].isin(competition_ids)].sort_values("start_date")
+    print(f"\n{len(added)} new competition(s):")
+    for c in added.itertuples():
+        print(
+            f"  {c.competition_id:<12} {c.start_date}  {c.weapon}{c.gender}  "
+            f"{c.level:<4} {c.name} ({c.city})"
+        )
 
 
 def cmd_discover(args: argparse.Namespace) -> int:
@@ -330,10 +482,33 @@ def main() -> None:
     scrape_all_parser.add_argument("--gender", choices=["M", "F"], help="Filter by gender")
     scrape_all_parser.add_argument("--force", action="store_true", help="Re-fetch and re-scrape even if already in canonical parquet")
     scrape_all_parser.add_argument(
+        "--refresh-lists", action="store_true",
+        help="Re-fetch every season's competition listing (the newest season's is always re-fetched)",
+    )
+    scrape_all_parser.add_argument(
         "--max-consecutive-fails", type=int, default=15,
         help="Abort the run after this many consecutive per-competition failures",
     )
     scrape_all_parser.set_defaults(func=cmd_scrape_all)
+
+    update_parser = subparsers.add_parser(
+        "update", help="Scrape newly-finished competitions and rebuild stats"
+    )
+    update_parser.add_argument(
+        "--season", type=int, action="append",
+        help="Season to update (repeatable). Default: the newest season in canonical data, and the one after it",
+    )
+    update_parser.add_argument("--weapon", choices=["F", "E", "S"], help="Filter by weapon")
+    update_parser.add_argument("--gender", choices=["M", "F"], help="Filter by gender")
+    update_parser.add_argument(
+        "--build-site", action="store_true",
+        help="Also regenerate site/data/ afterwards (~23 min; CI does this on push)",
+    )
+    update_parser.add_argument(
+        "--max-consecutive-fails", type=int, default=15,
+        help="Abort the run after this many consecutive per-competition failures",
+    )
+    update_parser.set_defaults(func=cmd_update)
 
     validate_parser = subparsers.add_parser("validate", help="Competition-matching report against legacy CSV")
     validate_parser.set_defaults(func=cmd_validate)

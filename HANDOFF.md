@@ -39,11 +39,16 @@ Two things it needs a decision from the user on, both untouched so far:
   `#/compare?ids=`, `#/paths?pool=&tier=&metric=&ids=`, `#/methodology?s=`,
   plus the 404 view.
 - `site/data/` is gitignored. Rebuild with `.venv/bin/ffs build-site` (~23 min,
-  162 MB, 22k files); it is a pure function of `data/canonical/*.parquet`.
+  212 MB, 22k files); it is a pure function of `data/canonical/*.parquet`.
   **M7 needs no rebuild.**
 - `.github/workflows/pages.yml` builds `site/data/` in CI.
-- `pytest`: 88/88 green. `ffs validate`: 286/286 competitions matched, fencer
+- `pytest`: 97/97 green. `ffs validate`: 286/286 competitions matched, fencer
   parity 99.3%.
+- **Data runs through the 2026 World Championships** (Hong Kong, 22–27 July
+  2026): 3,098 competitions, 25,886 fencers, 552,612 bouts, seasons 2002–2026.
+  Refreshing after a new competition is `ffs update` — see
+  [`docs/updating.md`](docs/updating.md), which also records why
+  `scrape-all --force` is the wrong tool and why `hasResults` can't be trusted.
 
 ## Things worth not re-deriving
 

@@ -5,10 +5,12 @@ archive, scraped, parsed into canonical tables, and pre-baked into JSON that a p
 HTML/CSS/JS front end reads. No server, no database, no build step for the front end —
 GitHub Pages serves the whole thing.
 
-3,092 competitions, 25,860 fencers and 548,901 bouts across seasons 2002–2026.
+3,098 competitions, 25,886 fencers and 552,612 bouts across seasons 2002–2026,
+through the 2026 World Championships in Hong Kong.
 
-See [`PLAN.md`](PLAN.md) for the rebuild plan and its progress log, and
-[`docs/methodology.md`](docs/methodology.md) for how every number is computed.
+See [`PLAN.md`](PLAN.md) for the rebuild plan and its progress log,
+[`docs/methodology.md`](docs/methodology.md) for how every number is computed, and
+[`docs/updating.md`](docs/updating.md) for how to refresh the data after a competition.
 
 ## What the site does
 
@@ -43,8 +45,9 @@ by anything the site shows.
 ```bash
 pip install -e .
 
+ffs update                   # scrape newly-finished competitions + rebuild stats
 ffs discover                 # list competitions from fie.org
-ffs scrape-all               # scrape them into data/raw/ and data/canonical/
+ffs scrape-all               # bulk historical scrape into data/canonical/
 ffs build-stats              # per-fencer-per-competition metrics + ratings
 ffs build-site               # generate site/data/ (~23 min) from data/canonical/
 ffs validate                 # parity check against the legacy dataset
@@ -52,6 +55,10 @@ ffs validate                 # parity check against the legacy dataset
 python -m pytest -q
 python3 -m http.server 8765 -d site   # then open http://localhost:8765/
 ```
+
+`ffs update` is the routine "a competition just finished" path — see
+[`docs/updating.md`](docs/updating.md) for the runbook and its gotchas.
+`ffs scrape-all` is the bulk historical one.
 
 `site/data/` is a pure function of `data/canonical/*.parquet`, so CI regenerates it:
 `.github/workflows/pages.yml` runs `ffs build-site` before uploading the Pages artifact.

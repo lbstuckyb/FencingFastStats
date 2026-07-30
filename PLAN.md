@@ -468,3 +468,29 @@ Home (pool selector, ELO top-20, recent comps, leaderboards) · Fencer search (c
     men's épée top-10 median at 27 is 1964.6 — both exactly as plotted.
   - `pytest`: **88/88 green** (no Python changed this milestone).
 - [ ] M7 — Proposal + backlog docs
+
+### Out-of-band: 2026 World Championships data refresh (2026-07-30)
+
+Not a milestone — the first live data refresh since the historical scrape, run because the
+Senior Worlds (Hong Kong, 22–27 July 2026) had finished.
+
+- **Found a bug that made the archive un-refreshable.** `cmd_scrape_all` called
+  `list_competitions()` without passing `force`, so it read the season's competition listing
+  from `data/raw_cache/competitions-list-{season}-I.json.gz`. That cache was written during the
+  historical scrape, so a season still in progress could never gain competitions and
+  `ffs scrape-all` reported "nothing new" forever. `--force` was not the escape hatch — it only
+  reaches `_scrape_one`, and it would re-scrape the whole range.
+- The season loop is now `_scrape_seasons()`, shared by `scrape-all` and the new `ffs update`.
+  It **always re-fetches the newest requested season's listing** (only that season can grow, so
+  one extra request even on a 2002–2026 replay); `scrape-all --refresh-lists` forces all of
+  them. `_scrape_seasons` returns `{ok, skipped, failed, aborted, new_competition_ids}`.
+- **`ffs update`** is the routine path: refresh listings → scrape what's new → `build-stats` →
+  print what landed. It defaults to the newest canonical season **and the one after it**, which
+  is what makes the September season rollover need no flag. `--build-site` chains the site build.
+- **`hasResults` is a lie** — all six Worlds events report `hasResults: 0` with full brackets
+  published, as do the already-scraped Asian Championships. It is deliberately not used as a gate.
+- **fie.org's CDN served a stale listing** (252 rows, pre-Worlds) on the first `ffs update`; an
+  immediate retry got the current 258. Noted in the runbook — retry before investigating.
+- Result: 3,092 → **3,098 competitions**, +1,029 result rows, +3,711 bouts, 2026 season 109 →
+  115. `ffs validate` still 286/286 matched, parity 99.3%. `pytest` 97/97 (88 + 9 new).
+- **`docs/updating.md`** is new — the refresh runbook, which had never been written down.
