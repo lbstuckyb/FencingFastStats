@@ -527,3 +527,41 @@ render,input}.js`, `site/js/views/play.js`, a route branch in `app.js`, an eight
   persisted. Rendered PNGs caught two draw bugs (ceiling lights through the HUD text; each
   fencer's rear-limit line hidden behind that fencer).
 - `pytest`: 97/97 green, unchanged — no Python was touched.
+
+**Addendum (2026-07-30): the attack read and the vector re-render.** Two presentation defects,
+fixed to `~/.claude/plans/rosy-snuggling-hamming.md`. Gameplay is untouched — `engine.js` rules,
+timings, reaches and the AI are all as above, so the tuning ordering still holds by construction.
+
+- **Pose numbers are now derived from `ACTIONS[…].reach`, not typed.** En garde had been drawn
+  with the tip at 30 against an attack reach of 32, so the *resting* pose already sat at full
+  attack range and `A` had nothing to extend into; the lunge had the mirror problem (tip 58
+  against a reach of 52). Every blade action's furthest keyframe is now `reach - 2` — the `- 2`
+  because the hit test is centre-to-centre, so a tip drawn at exactly `reach` looks like it goes
+  through the target. En garde retracts to a bent arm, which is what creates the room. Measured:
+  garde tip 20 → `attackOut` 30, and no drawn tip exceeds its action's reach.
+- Two lengths are now held roughly constant across the pose table — **arm ~14, blade ~13** — and
+  every pose that moves the neck moves the shoulder with it, because the torso is a filled shape
+  now and an arm springing out of thin air shows. `lungeOut` is the one deliberate exception: the
+  engine measures from the fencer's centre and never moves it, so the lunge's extra 20 units of
+  reach have to come out of the *drawing*, split between a torso leaning over the front leg and a
+  blade drawn long.
+- **The canvas is vector line art at device resolution, not an upscaled buffer.** 320×180 is now
+  only a coordinate space: `views/play.js` sizes the backing store from the canvas's own layout
+  box × `devicePixelRatio` (capped at 3), and `draw()` scales the context by
+  `canvas.width / WIDTH`. Every existing drawing call kept its numbers. `image-rendering:
+  pixelated` is gone and the surface cap went 720 → 880px. **Do not reintroduce a fixed canvas
+  size or `image-rendering` in `.game-*` CSS.** Sizing has three belts, matching the lifecycle
+  ones already in `play.js`: a `ResizeObserver` (the general case, and the only one that covers a
+  layout change while a run is paused or over), a per-frame re-check inside the loop, and a plain
+  `window` resize listener. `ResizeObserver` callbacks are delivered in the same rendering step
+  as rAF, so whatever suppresses one suppresses the other — which is also why the headless
+  harness cannot pin the resize path down and the live PNGs are what actually verify it.
+- Fencer art: fencing mask (dome + bib + mesh strokes, oriented by `f.dir`), a tapered jacket
+  quad instead of a spine stroke, a tapered blade, leg taper. Plus a blade trail (two ghosts back
+  toward the previous keyframe, via `previousPose`), contact shadows that widen on a lunge and
+  fade as the hip lifts on a jump-back, a scoring apparatus whose two lamps light on a touch, and
+  a wall gradient / floor sheen / spectator dots for depth.
+- **The one engine edit is render-only:** `awardTouch` also sets `state.lamp = to`, declared
+  `lamp: null` in `createGame`, and `BLADE_ACTIONS` is exported so `render.js` doesn't keep a
+  second copy. The invariant sweep was re-run (120 matches × 4 modes, 83k steps) and held.
+  `pytest`: 97/97.

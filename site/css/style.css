@@ -405,20 +405,22 @@ th.num .th-sort { width: 100%; text-align: right; }
 
 /* ---------- play ---------- */
 
-/* The canvas draws at a fixed 320x180 and is blown up by CSS: `pixelated` is
-   what keeps the enlarged pixels crisp instead of smearing them, and it is
-   half of where the retro look comes from (the other half is the 12fps pose
-   stepping in js/game/poses.js). */
-/* Capped and centred: a 320x180 canvas stretched across the full card upscales
-   past 3x, where the pixel grid stops reading as retro and just looks mushy —
-   and the control pad ends up a row of very wide, very short buttons. */
-.game-surface { display: grid; gap: .75rem; max-width: 720px; margin: 0 auto; }
+/* The canvas is vector line art, not pixel art: js/views/play.js sizes the
+   backing store from this element's own layout box (x devicePixelRatio) and
+   js/game/render.js scales its 320x180 coordinate space onto it, so every mark
+   is drawn at device resolution at any width. Nothing here may set a fixed
+   pixel size or `image-rendering` — that would put the upscaled-buffer look
+   straight back. The weight in the animation comes from the 12fps pose
+   stepping in js/game/poses.js. */
+/* Capped and centred: the drawing scales cleanly to any width, but the control
+   pad below turns into a row of very wide, very short buttons well before the
+   full card width. */
+.game-surface { display: grid; gap: .75rem; max-width: 880px; margin: 0 auto; }
 .game-stage { position: relative; }
 .game-canvas {
   display: block; width: 100%; aspect-ratio: 16 / 9;
   background: var(--surface-0);
   border: 1px solid var(--border); border-radius: var(--radius);
-  image-rendering: pixelated;
 }
 
 .game-hud {
@@ -460,7 +462,7 @@ th.num .th-sort { width: 100%; text-align: right; }
 .game-pad button:active { background: var(--series-1); border-color: var(--series-1); color: #fff; }
 
 /* Same cap as .game-surface so the rules line up with the canvas on desktop. */
-.game-rules { margin: 1rem auto 0; max-width: 720px; }
+.game-rules { margin: 1rem auto 0; max-width: 880px; }
 .game-rules table { margin-top: .5rem; }
 
 @media (max-width: 640px) {

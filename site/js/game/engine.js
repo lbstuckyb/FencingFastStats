@@ -64,7 +64,9 @@ export const ACTIONS = {
   recoil: { windup: 0, active: 0, recovery: 420 }, // being parried
 };
 
-const BLADE_ACTIONS = new Set(["attack", "riposte", "lunge"]);
+// Exported so `render.js` doesn't keep a second copy that can drift: it needs
+// to know when a blade is in flight to draw the trail behind it.
+export const BLADE_ACTIONS = new Set(["attack", "riposte", "lunge"]);
 
 export const OPPONENTS = [
   "Bout 1 · the club captain",
@@ -126,6 +128,7 @@ export function createGame({ seed = 1 } = {}) {
     lock: null, // the open lockout box, if a touch has just landed
     freeze: 0, // ms left of the between-touches reset
     flash: 0, // ms left of the touch flash (render only)
+    lamp: null, // who the apparatus lit for (render only): player | opponent | both
     shake: 0,
     events: [], // consumed by the view each frame
     last: "En garde.",
@@ -355,6 +358,7 @@ function awardTouch(state, to, reason) {
   if (to === "player" || to === "both") state.score += 1;
   if (to === "opponent" || to === "both") state.lives -= 1;
   state.flash = 240;
+  state.lamp = to; // render only: which side of the apparatus lights up
   state.shake = to === "player" ? 90 : 160;
   state.events.push({ type: "touch", to, reason });
   state.last =

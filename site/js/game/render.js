@@ -1,12 +1,17 @@
 // Canvas drawing. Reads every colour from the site's CSS custom properties, so
-// the salle follows the theme toggle exactly the way the charts do — the retro
-// feel comes from the 320x180 internal resolution and the 12fps pose stepping
-// in `poses.js`, not from a hard-coded palette.
+// the salle follows the theme toggle exactly the way the charts do, and nothing
+// here is hard-coded to a theme.
+//
+// 320x180 is a *coordinate space*, not a resolution: `draw()` scales the whole
+// context by however much bigger the backing store is, so the marks are vector
+// line art rendered at device resolution while every number below stays in the
+// small, readable space. The weight in the animation comes from the 12fps pose
+// stepping in `poses.js` — nothing here depends on a pixel grid.
 //
 // Nothing here decides anything: it draws whatever `engine.js` produced.
 
-import { CONFIG } from "./engine.js";
-import { FRAME_MS, poseFor } from "./poses.js";
+import { BLADE_ACTIONS, CONFIG } from "./engine.js";
+import { FRAME_MS, GARDE_HIP, poseFor, previousPose } from "./poses.js";
 
 export const WIDTH = 320;
 export const HEIGHT = 180;
@@ -34,6 +39,8 @@ export function readPalette(node) {
   };
 }
 
+const lerp = (a, b, t) => a + (b - a) * t;
+
 function line(ctx, a, b, width, color) {
   ctx.beginPath();
   ctx.moveTo(a[0], a[1]);
@@ -41,6 +48,13 @@ function line(ctx, a, b, width, color) {
   ctx.lineWidth = width;
   ctx.strokeStyle = color;
   ctx.stroke();
+}
+
+function ellipse(ctx, x, y, rx, ry, color) {
+  ctx.beginPath();
+  ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
 }
 
 // ---- the salle -------------------------------------------------------------
@@ -51,12 +65,27 @@ function drawSalle(ctx, palette) {
 
   // Everything above CEILING belongs to the HUD. Scene furniture drawn up
   // there strikes straight through the score and the opponent's name.
-  ctx.fillStyle = palette.wall;
+  // The wall graduates sky -> wall from the ceiling down, which is all the
+  // depth a flat side view needs to stop reading as a swatch.
+  const wash = ctx.createLinearGradient(0, CEILING, 0, GROUND);
+  wash.addColorStop(0, palette.sky);
+  wash.addColorStop(1, palette.wall);
+  ctx.fillStyle = wash;
   ctx.fillRect(0, CEILING, WIDTH, GROUND - CEILING);
+
   ctx.globalAlpha = 0.6;
   for (let x = 16; x < WIDTH; x += 32) line(ctx, [x, CEILING], [x, GROUND], 1, palette.line);
   line(ctx, [0, CEILING + 0.5], [WIDTH, CEILING + 0.5], 1, palette.lineStrong);
   line(ctx, [0, 100.5], [WIDTH, 100.5], 1, palette.line);
+  ctx.globalAlpha = 1;
+
+  // A row of spectators, far enough back to be dots. Low alpha on purpose:
+  // this is the only mark in the salle carrying no gameplay signal, so it has
+  // to stay under the notice threshold.
+  ctx.globalAlpha = 0.15;
+  for (let x = 12; x < WIDTH; x += 9) {
+    ellipse(ctx, x, 64 + (x % 18 === 3 ? 1.5 : 0), 2, 2.4, palette.lineStrong);
+  }
   ctx.globalAlpha = 1;
 
   // Lights hanging off the ceiling line, for a little depth.
@@ -64,6 +93,39 @@ function drawSalle(ctx, palette) {
     line(ctx, [x, CEILING], [x, CEILING + 6], 1, palette.line);
     ctx.fillStyle = palette.lineStrong;
     ctx.fillRect(x - 9, CEILING + 6, 18, 3);
+  }
+}
+
+// The scoring apparatus: one lamp per fencer, on that fencer's own side, the
+// way a real box is wired. It hangs between the HUD strip and the spectators,
+// well clear of anything a lunge can reach.
+function drawApparatus(ctx, state, palette) {
+  const w = 46;
+  const h = 18;
+  const x = WIDTH / 2 - w / 2;
+  const y = 36;
+
+  line(ctx, [WIDTH / 2, CEILING + 1], [WIDTH / 2, y], 1, palette.lineStrong);
+  ctx.fillStyle = palette.piste;
+  ctx.fillRect(x, y, w, h);
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = palette.lineStrong;
+  ctx.strokeRect(x, y, w, h);
+
+  const lit = state.flash > 0 ? state.lamp : null;
+  const lamps = [
+    [x + 12, playerColor(palette), lit === "player" || lit === "both"],
+    [x + w - 12, opponentColor(palette, state), lit === "opponent" || lit === "both"],
+  ];
+  for (const [lx, color, on] of lamps) {
+    ctx.globalAlpha = on ? 1 : 0.25;
+    ellipse(ctx, lx, y + h / 2, 6.5, 5, on ? color : palette.lineStrong);
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    ctx.ellipse(lx, y + h / 2, 6.5, 5, 0, 0, Math.PI * 2);
+    ctx.lineWidth = 0.8;
+    ctx.strokeStyle = palette.lineStrong;
+    ctx.stroke();
   }
 }
 
@@ -99,6 +161,16 @@ function drawPiste(ctx, palette, state) {
     }
     ctx.globalAlpha = 1;
   }
+
+  // A sheen off the floor immediately below the piste, so the strip reads as
+  // sitting on something rather than floating on the background.
+  const sheen = ctx.createLinearGradient(0, GROUND + PISTE_H, 0, GROUND + PISTE_H + 10);
+  sheen.addColorStop(0, palette.wall);
+  sheen.addColorStop(1, palette.sky);
+  ctx.globalAlpha = 0.55;
+  ctx.fillStyle = sheen;
+  ctx.fillRect(0, GROUND + PISTE_H, WIDTH, 10);
+  ctx.globalAlpha = 1;
 }
 
 // ---- fencers ---------------------------------------------------------------
@@ -107,11 +179,41 @@ const playerColor = (palette) => palette.text;
 const opponentColor = (palette, state) =>
   palette.series[(state.bout + 1) % palette.series.length];
 
-function drawFencer(ctx, f, state, palette, body, blade) {
+// A contact shadow, so the figure stands on the piste instead of hovering over
+// it. It spreads with the feet — widest and darkest at the bottom of a lunge —
+// and fades out as the hip lifts above its garde height, which is the whole
+// tell that a jump-back has left the floor.
+function drawShadow(ctx, f, state, palette) {
+  const p = poseFor(f, state.time);
+  const lift = Math.max(0, p.hip[1] - GARDE_HIP);
+  const alpha = 0.24 * Math.max(0, 1 - lift / 5);
+  if (alpha <= 0.01) return;
+  const spread = Math.abs(p.frontFoot[0] - p.backFoot[0]);
+  const centre = f.x + (f.dir * (p.frontFoot[0] + p.backFoot[0])) / 2;
+  ctx.globalAlpha = alpha;
+  ellipse(ctx, centre, GROUND + 2, spread * 0.5 + 3, 2, palette.lineStrong);
+  ctx.globalAlpha = 1;
+}
+
+// Blade, drawn tapered off the bell guard: a heavier forte, a thin foible and a
+// dot for the point. Thin on purpose — a blade as wide as a limb stops reading
+// as steel. `ghost` drops the point, so the trail behind an extension reads as
+// one blade smearing rather than three blades.
+function bladeMark(ctx, hand, tip, color, alpha = 1, ghost = false) {
+  const mid = [lerp(hand[0], tip[0], 0.4), lerp(hand[1], tip[1], 0.4)];
+  ctx.globalAlpha = alpha;
+  line(ctx, hand, mid, 1.0, color);
+  line(ctx, mid, tip, 0.5, color);
+  if (!ghost) ellipse(ctx, tip[0], tip[1], 0.7, 0.7, color);
+  ctx.globalAlpha = 1;
+}
+
+function drawFencer(ctx, f, state, palette, body, blade, opts = {}) {
   const p = poseFor(f, state.time);
   const px = (j) => f.x + f.dir * j[0];
   const py = (j) => GROUND - j[1];
-  const seg = (a, b, w) => line(ctx, [px(p[a]), py(p[a])], [px(p[b]), py(p[b])], w, body);
+  const at = (j) => [px(j), py(j)];
+  const seg = (a, b, w) => line(ctx, at(p[a]), at(p[b]), w, body);
 
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
@@ -122,26 +224,71 @@ function drawFencer(ctx, f, state, palette, body, blade) {
   seg("rearElbow", "rearHand", 2.2);
   ctx.globalAlpha = 1;
 
-  seg("hip", "backKnee", 2.6);
-  seg("backKnee", "backFoot", 2.6);
-  seg("hip", "frontKnee", 2.8);
-  seg("frontKnee", "frontFoot", 2.8);
-  seg("hip", "neck", 3.2);
+  // Legs taper: the thigh carries the weight, the shin only carries the foot.
+  seg("hip", "backKnee", 3.0);
+  seg("backKnee", "backFoot", 2.2);
+  seg("hip", "frontKnee", 3.2);
+  seg("frontKnee", "frontFoot", 2.4);
+
+  // Jacket, not a spine: a quad wider at the chest than at the waist. This is
+  // the single mark that turns the figure from a stick into a fencer.
+  const hip = at(p.hip);
+  const neck = at(p.neck);
+  const dx = neck[0] - hip[0];
+  const dy = neck[1] - hip[1];
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len;
+  const ny = dx / len;
+  const flank = (point, w, sign) => [point[0] + sign * nx * w, point[1] + sign * ny * w];
+  ctx.beginPath();
+  ctx.moveTo(...flank(hip, 2.2, 1));
+  ctx.lineTo(...flank(neck, 3.6, 1));
+  ctx.lineTo(...flank(neck, 3.6, -1));
+  ctx.lineTo(...flank(hip, 2.2, -1));
+  ctx.closePath();
+  ctx.fillStyle = body;
+  ctx.fill();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = body;
+  ctx.stroke();
+
   seg("shoulder", "elbow", 2.4);
   seg("elbow", "hand", 2.4);
 
+  // The mask: a dome with a bib flaring down toward the collar, and two mesh
+  // strokes across the front. Both are oriented by `f.dir`, so which way a
+  // fencer is facing is legible from the head alone.
+  const head = at(p.head);
+  const d = f.dir;
   ctx.fillStyle = body;
   ctx.beginPath();
-  ctx.arc(px(p.head), py(p.head), 3.4, 0, Math.PI * 2);
+  ctx.moveTo(head[0] - d * 3.4, head[1] + 1.2);
+  ctx.lineTo(head[0] + d * 3.6, head[1] + 0.4);
+  ctx.lineTo(head[0] + d * 2.6, head[1] + 5.4);
+  ctx.lineTo(neck[0] - d * 1.6, neck[1] + 0.4);
+  ctx.closePath();
   ctx.fill();
+  ellipse(ctx, head[0], head[1], 3.6, 4.2, body);
+  ctx.globalAlpha = 0.4;
+  line(ctx, [head[0] + d * 0.4, head[1] - 2.4], [head[0] + d * 3.2, head[1] - 1.0], 0.7, palette.sky);
+  line(ctx, [head[0] + d * 0.2, head[1] + 0.4], [head[0] + d * 3.4, head[1] + 1.2], 0.7, palette.sky);
+  ctx.globalAlpha = 1;
 
-  // Bell guard and blade. The blade is the only 1px mark on screen, which is
-  // what makes an extension read at a glance.
-  ctx.beginPath();
-  ctx.arc(px(p.hand), py(p.hand), 1.9, 0, Math.PI * 2);
-  ctx.fillStyle = blade;
-  ctx.fill();
-  line(ctx, [px(p.hand), py(p.hand)], [px(p.tip), py(p.tip)], 1, blade);
+  // Blade trail: two ghosts strung back toward where the blade was one
+  // keyframe ago. On a 12fps step the eye has no in-betweens to work with, so
+  // this is what turns an extension into a movement rather than a jump cut.
+  const sweeping =
+    BLADE_ACTIONS.has(f.action) || (f.action === "parry" && f.phase === "active");
+  if (!opts.reducedMotion && sweeping && f.phase === "active") {
+    const q = previousPose(f, state.time);
+    const back = (from, to, t) => [lerp(px(from), px(to), t), lerp(py(from), py(to), t)];
+    for (const [t, alpha] of [[0.66, 0.3], [0.33, 0.15]]) {
+      bladeMark(ctx, back(q.hand, p.hand, t), back(q.tip, p.tip, t), blade, alpha, true);
+    }
+  }
+
+  ellipse(ctx, px(p.hand), py(p.hand), 1.9, 1.9, blade);
+  bladeMark(ctx, at(p.hand), at(p.tip), blade);
 
   // Riposte window: a bar over the head, the only thing on the piste that
   // blinks, because it is the only thing that expires.
@@ -149,7 +296,7 @@ function drawFencer(ctx, f, state, palette, body, blade) {
     const on = Math.floor(state.time / FRAME_MS) % 2 === 0;
     if (on) {
       ctx.fillStyle = blade;
-      ctx.fillRect(px(p.head) - 5, py(p.head) - 9, 10, 2);
+      ctx.fillRect(head[0] - 5, head[1] - 9, 10, 2);
     }
   }
   ctx.lineCap = "butt";
@@ -199,15 +346,24 @@ export function draw(ctx, state, palette, opts = {}) {
   // Stepped, not smooth: the shake is on the same 12fps grid as everything else.
   const offset = shake > 0 ? (Math.floor(state.time / FRAME_MS) % 2 ? 1 : -1) * Math.ceil(shake / 60) : 0;
 
+  // Everything below is written in the 320x180 space; this is the one line
+  // that maps it onto however many device pixels the layout actually gave us,
+  // so the line art is resolution-independent rather than an upscaled buffer.
+  const k = ctx.canvas.width / WIDTH || 1;
+
   ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.setTransform(k, 0, 0, k, 0, 0);
   ctx.clearRect(0, 0, WIDTH, HEIGHT);
   ctx.translate(offset, 0);
 
   drawSalle(ctx, palette);
+  drawApparatus(ctx, state, palette);
   drawPiste(ctx, palette, state);
-  drawFencer(ctx, state.opponent, state, palette, opponentColor(palette, state), opponentColor(palette, state));
-  drawFencer(ctx, state.player, state, palette, playerColor(palette), palette.series[0]);
+  drawShadow(ctx, state.opponent, state, palette);
+  drawShadow(ctx, state.player, state, palette);
+  const oppColor = opponentColor(palette, state);
+  drawFencer(ctx, state.opponent, state, palette, oppColor, oppColor, opts);
+  drawFencer(ctx, state.player, state, palette, playerColor(palette), palette.series[0], opts);
   drawHud(ctx, state, palette);
 
   if (!opts.reducedMotion && state.flash > 0) {

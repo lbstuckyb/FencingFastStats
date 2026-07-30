@@ -112,6 +112,37 @@ export async function render() {
   const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
   const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
 
+  // The backing store follows the layout, not the constants: `draw()` works in
+  // the 320x180 space and scales onto whatever is here, so the salle is vector
+  // line art at device resolution instead of a small buffer blown up by CSS.
+  // Capped at 3x because past that the extra pixels cost fill rate and buy
+  // nothing a display can show.
+  function resize(width) {
+    if (!(width > 0)) return false;
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    const w = Math.round(width * dpr);
+    const h = Math.round((w * HEIGHT) / WIDTH);
+    if (w === canvas.width && h === canvas.height) return false;
+    canvas.width = w;
+    canvas.height = h;
+    return true;
+  }
+
+  // Changing the backing store clears the canvas, so a paused or finished run
+  // has to be redrawn by hand — the frame loop isn't running to do it.
+  function resized(width) {
+    if (!resize(width) || raf || stopped) return;
+    draw(ctx, state, palette, { reducedMotion: motionQuery.matches });
+  }
+
+  const observer = new ResizeObserver((entries) => {
+    for (const entry of entries) resized(entry.contentRect.width);
+  });
+  // The observer is the general case; this is the common one. Observer
+  // callbacks are delivered in the rendering step, which a window that isn't
+  // painting doesn't reach — a plain resize event still does.
+  const onResize = () => resized(canvas.clientWidth);
+
   const isLive = () => state.phase === "playing";
   const { input, detach } = attach(surface, isLive);
 
@@ -175,6 +206,12 @@ export async function render() {
     // Belt one: the router replaced `main`, so this canvas is orphaned. Nothing
     // else will tell us — there is no teardown hook to hang it on.
     if (stopped || !canvas.isConnected) { stop(); return; }
+    // Belt one and a half. `ResizeObserver` notifications are delivered in the
+    // same rendering step as this callback, so anything that suppresses that
+    // step suppresses both — and the canvas would then be drawing into a
+    // backing store the layout has already moved on from. The read is off a
+    // leaf element that nothing here reflows, so it costs nothing.
+    resize(canvas.clientWidth);
 
     const dt = previous ? now - previous : 0;
     previous = now;
@@ -220,6 +257,8 @@ export async function render() {
     if (raf) cancelAnimationFrame(raf);
     raf = 0;
     detach();
+    observer.disconnect();
+    window.removeEventListener("resize", onResize);
     window.removeEventListener("hashchange", onHashChange);
     window.removeEventListener("ffs:themechange", onTheme);
     document.removeEventListener("visibilitychange", onVisibility);
@@ -241,6 +280,8 @@ export async function render() {
   window.addEventListener("ffs:themechange", onTheme);
   document.addEventListener("visibilitychange", onVisibility);
   darkQuery.addEventListener("change", onTheme);
+  window.addEventListener("resize", onResize);
+  observer.observe(canvas);
 
   overlayButton.addEventListener("click", () => {
     if (state.phase === "paused") {
