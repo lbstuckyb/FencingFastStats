@@ -14,3 +14,8 @@ data/raw_cache/
 site/data/
 
 .DS_Store
+
+# internal working docs, not meant for the public repo
+PLAN.md
+HANDOFF.md
+.idea/
