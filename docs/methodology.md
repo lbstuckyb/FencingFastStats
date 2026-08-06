@@ -43,7 +43,7 @@ legacy's wide hand-scraped Excel columns.
 
 Poule-derived metrics are `NaN` for an entire competition when fie.org's own
 archive has zero poule bout data for it (pre-~2016 "results-only"
-competitions — see the M3a progress notes in `PLAN.md`); the same applies to
+competitions — see the coverage table in `docs/proposal.md` §3); the same applies to
 DE-derived metrics vs zero DE bout data. Within a competition that does have
 data, an athlete with zero personal bouts in that phase also gets `NaN`
 there (`PEXMPT=1` marks "no poule bouts", see below).
@@ -237,8 +237,8 @@ fie.org's own archive is missing some poule bouts entirely (e.g. `2020-385`
 pool 29: athlete 28816 has bouts recorded at `bout_order` 1, 2, 4, 5, but 3
 is simply missing — a real hole in fie.org's data, not a parser bug; the
 same phenomenon affects `PEXMPT` for `2025-242`'s champion, documented
-above). This was an anticipated risk (`PLAN.md`: "legacy may have real bout
-data our scrape doesn't"). Since the combined overall rate (99.3%) clears
+above). This was an anticipated risk of the rebuild — the legacy dataset may
+hold real bout data this scrape cannot get. Since the combined overall rate (99.3%) clears
 the mandatory ≥99% gate, it's accepted as an archive-era limitation rather
 than chased further.
 
@@ -252,6 +252,6 @@ data already collected. No official FIE API exists; the SSR-embedded JSON
 payload (and one undocumented-but-public REST endpoint for paginated
 results, discovered via the site's own JS bundle) is the only way to get
 structured competition data from fie.org today. This is public, unauthenticated
-data throttled and cached responsibly — see `docs/proposal.md`'s legal/data
-posture section (M7) for the fuller pitch to FIE, including an offer to
-switch to an official feed if one becomes available.
+data throttled and cached responsibly — see `docs/proposal.md` §10 for the
+fuller posture, and §8 for what an official feed would change, including the
+standing offer to switch to one if it becomes available.
