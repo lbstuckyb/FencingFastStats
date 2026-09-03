@@ -26,15 +26,15 @@ const read = (styles, name, fallback) => styles.getPropertyValue(name).trim() ||
 /** Pulls the palette off `node`'s computed style. Call again on theme change. */
 export function readPalette(node) {
   const styles = getComputedStyle(node || document.documentElement);
-  const series = (i) => read(styles, `--series-${i}`, "#2a78d6");
+  const series = (i) => read(styles, `--series-${i}`, "#1233e0");
   return {
-    sky: read(styles, "--surface-0", "#f4f3f0"),
-    wall: read(styles, "--surface-2", "#eceae5"),
-    piste: read(styles, "--surface-1", "#fcfcfb"),
-    line: read(styles, "--border", "#dedcd5"),
-    lineStrong: read(styles, "--border-strong", "#c6c3b9"),
-    text: read(styles, "--text-primary", "#0b0b0b"),
-    muted: read(styles, "--text-muted", "#78766f"),
+    sky: read(styles, "--surface-0", "#ffffff"),
+    wall: read(styles, "--surface-2", "#eceef1"),
+    piste: read(styles, "--surface-1", "#ffffff"),
+    line: read(styles, "--border", "#c9ccd2"),
+    lineStrong: read(styles, "--border-strong", "#000000"),
+    text: read(styles, "--text-primary", "#000000"),
+    muted: read(styles, "--text-muted", "#6b7078"),
     series: [series(1), series(2), series(3), series(4), series(5), series(6)],
   };
 }
@@ -305,7 +305,7 @@ function drawFencer(ctx, f, state, palette, body, blade, opts = {}) {
 // ---- hud -------------------------------------------------------------------
 
 function drawHud(ctx, state, palette) {
-  ctx.font = "bold 10px system-ui, -apple-system, sans-serif";
+  ctx.font = "bold 10px Archivo, system-ui, sans-serif";
   ctx.textBaseline = "top";
 
   // Lives as blade pips: filled while you still have them, hollow once spent.
@@ -326,7 +326,7 @@ function drawHud(ctx, state, palette) {
   ctx.fillText(String(state.score).padStart(3, "0"), WIDTH - 10, 9);
   ctx.textAlign = "left";
   ctx.fillStyle = palette.muted;
-  ctx.font = "9px system-ui, -apple-system, sans-serif";
+  ctx.font = "9px Archivo, system-ui, sans-serif";
   ctx.fillText("TOUCHES", WIDTH - 10 - ctx.measureText("TOUCHES").width, 21);
 
   ctx.textAlign = "center";

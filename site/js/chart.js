@@ -38,14 +38,15 @@ const token = (name) =>
 // (validated for both surfaces — see css/style.css). A series' colour follows
 // the fencer it belongs to, never their position in the current sort.
 export const SERIES_SLOTS = 6;
-export const seriesColor = (i) => token(`--series-${(i % SERIES_SLOTS) + 1}`) || "#2a78d6";
+export const seriesColor = (i) => token(`--series-${(i % SERIES_SLOTS) + 1}`) || "#1233e0";
 
 function palette() {
   return {
-    textPrimary: token("--text-primary") || "#0b0b0b",
-    textSecondary: token("--text-secondary") || "#52514e",
-    gridLine: token("--border") || "#dedcd5",
-    surface: token("--surface-1") || "#fcfcfb",
+    textPrimary: token("--text-primary") || "#000000",
+    textSecondary: token("--text-secondary") || "#3c4048",
+    gridLine: token("--border") || "#c9ccd2",
+    surface: token("--surface-1") || "#ffffff",
+    fontFamily: "Archivo, system-ui, sans-serif",
   };
 }
 
@@ -88,7 +89,7 @@ async function mount(container, build) {
 // ---- rating timeline -------------------------------------------------------
 
 function ratingOption(points) {
-  const { textPrimary, textSecondary, gridLine, surface } = palette();
+  const { textPrimary, textSecondary, gridLine, surface, fontFamily } = palette();
   const series1 = seriesColor(0);
 
   const data = points.map((p) => [p.date, Math.round(p.post * 10) / 10]);
@@ -100,6 +101,7 @@ function ratingOption(points) {
   return {
     animation: false,
     backgroundColor: "transparent",
+    textStyle: { fontFamily },
     grid: { left: 8, right: 56, top: 16, bottom: 8, containLabel: true },
     tooltip: {
       trigger: "axis",
@@ -194,7 +196,7 @@ function estimateLegendRows(names, width) {
 //   It is silent and legend-less: the median line it belongs to carries the
 //   identity, and its numbers ride that line's tooltip.
 function metricOption(series, axis, granularity, band, width) {
-  const { textPrimary, textSecondary, gridLine, surface } = palette();
+  const { textPrimary, textSecondary, gridLine, surface, fontFamily } = palette();
   const multi = series.length > 1;
   // Past four lines a label at every line-end turns into a stack of collided
   // text; the legend and the tooltip carry identity from there on.
@@ -230,6 +232,7 @@ function metricOption(series, axis, granularity, band, width) {
   return {
     animation: false,
     backgroundColor: "transparent",
+    textStyle: { fontFamily },
     grid: {
       left: 8,
       right: direct ? 96 : 16,
