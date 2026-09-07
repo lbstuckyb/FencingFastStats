@@ -18,4 +18,8 @@ site/data/
 # internal working docs, not meant for the public repo
 PLAN.md
 HANDOFF.md
+docs/*.md
+docs/*.docx
+docs/.~lock.*
+legacy/
 .idea/

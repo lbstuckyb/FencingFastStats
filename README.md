@@ -32,22 +32,7 @@ Ratings and cohort tiers are **this project's own measure**, computed from bout 
 The FIE's official points and rankings are not part of the dataset and are never implied
 by anything the site shows.
 
-## Docs
+## Built with
 
-- [`docs/proposal.md`](docs/proposal.md) — the pitch to the FIE: what exists, what the
-  data does and doesn't support, what an official feed would unlock, integration paths
-  and the data/legal posture.
-- [`docs/methodology.md`](docs/methodology.md) — how every number is computed, every
-  deviation from the legacy dataset, and the validation results.
-- [`docs/backlog-phase3.md`](docs/backlog-phase3.md) — win probability, momentum,
-  style profiles, fantasy scoring and rating-model work: specified, not built.
-
-## Repo layout
-
-- `src/ffs/` — the Python pipeline: fie.org scraper, parser, stats engine, Elo ratings,
-  metric registry and the static-site builder.
-- `data/canonical/*.parquet` — the scraped, canonicalised tables. `data/legacy/` is the
-  old dataset, kept only as a validation oracle.
-- `site/` — the front end, built by CI from `data/canonical/` and deployed to Pages.
-- `legacy/` — the original Plotly Dash app and its manual Excel pipeline (2021–2022),
-  kept for reference.
+Python (pandas, pyarrow) for the scrape-to-stats pipeline; a plain HTML/CSS/JS front
+end with no framework or build step.
