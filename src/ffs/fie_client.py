@@ -102,6 +102,46 @@ class FieClient:
             json.dump(result, f)
         return result
 
+    def fetch_competition_api(self, season: int, comp_id: int, force: bool = False) -> dict:
+        """Fetch a competition's data from fie.org's JSON API and return it in
+        the same `{query_key_tuple: body}` shape `devalue.extract_queries`
+        yields from the SSR page, so `parse_competition` is unchanged.
+
+        As of 2026-10 the `/competitions/{season}/{id}` HTML pages return
+        HTTP 500 for every competition, but the endpoints the page's own
+        client-side queries call are still served:
+        `/api/fie/competition/{season}/{id}` plus `/results/pools`,
+        `/results/tableau` and `/pool/results`. Each is cached whole.
+        """
+        endpoints = {
+            ("competitions", comp_id, season): "",
+            ("competitions", "results", "pools", comp_id, season): "/results/pools",
+            ("competitions", "pool", "results", comp_id, season): "/pool/results",
+            ("competitions", "results", "tableau", comp_id, season): "/results/tableau",
+        }
+        queries: dict[tuple, dict] = {}
+        for key, suffix in endpoints.items():
+            cache_path = self._cache_path(f"api-{season}-{comp_id}{suffix.replace('/', '-')}")
+            if not force and cache_path.exists():
+                with gzip.open(cache_path, "rt", encoding="utf-8") as f:
+                    queries[key] = json.load(f)
+                continue
+            url = f"{BASE_URL}/api/fie/competition/{season}/{comp_id}{suffix}"
+            self._throttle()
+            resp = self.session.get(url, timeout=self.timeout, headers={"Accept": "application/json"})
+            self._last_request_at = time.monotonic()
+            if resp.status_code == 404 and suffix:
+                queries[key] = {}  # e.g. no tableau/pool-results published for this event
+                continue
+            if resp.status_code != 200:
+                raise FetchError(f"GET {url} -> HTTP {resp.status_code}")
+            body = resp.json()
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            with gzip.open(cache_path, "wt", encoding="utf-8") as f:
+                json.dump(body, f)
+            queries[key] = body
+        return queries
+
     def fetch_competition(self, season: int, comp_id: int, force: bool = False) -> dict:
         """Fetch a competition page. Returns `{"raw", "resolved_path",
         "tournament_id"}` — `tournament_id` is parsed from the resolved

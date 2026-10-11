@@ -33,10 +33,11 @@ def _scrape_one(
 ) -> dict[str, pd.DataFrame]:
     """Fetch, decode and parse one competition. Raises on fetch/parse errors
     or `validate_tables()` issues (caller decides how to handle failures)."""
-    comp = client.fetch_competition(season, comp_id, force=force)
-    decoded = devalue.unflatten(comp["raw"])
-    queries = devalue.extract_queries(decoded)
+    queries = client.fetch_competition_api(season, comp_id, force=force)
+    comp = {"tournament_id": None}
     ranking_items = client.fetch_results_ranking(season, comp_id, force=force)
+    if not ranking_items:
+        raise ValueError("fie.org has no results published for this competition")
 
     if dump:
         dump_path = Path(f"data/raw_cache/dump-{season}-{comp_id}.json")
