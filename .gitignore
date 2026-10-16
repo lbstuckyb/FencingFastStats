@@ -20,6 +20,7 @@ PLAN.md
 HANDOFF.md
 docs/*.md
 docs/*.docx
+docs/*.pdf
 docs/.~lock.*
 legacy/
 .idea/
